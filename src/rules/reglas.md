@@ -50,6 +50,17 @@ Empezando por la mano, cada jugador dice **«Mus»** si quiere cambiar cartas o 
 
 ::cards 12-espadas 3-bastos 4-copas 6-oros | Con dos reyes, lo normal es tirar el 4 y el 6 para buscar más reyes
 
+### El mus corrido
+
+La **primera mano de cada partida** se juega a **mus corrido**, y sirve para decidir quién empieza de mano:
+
+1. El que reparte deja el mazo a su derecha y habla el jugador de su derecha.
+2. Si pide **mus**, **pasa el mazo a su derecha** y habla el siguiente.
+3. El que **corta el mus** («no hay mus») **se queda de mano**, y el que tiene el mazo a su izquierda es el postre.
+4. Si **los cuatro** piden mus, el mazo ha dado la vuelta completa: se descarta, **reparte los descartes el jugador a la derecha del último que repartió** y se vuelve a empezar, hasta que alguien corte.
+
+Durante el mus corrido **no se pueden hacer señas**.
+
 > **Truco:** corta el mus cuando tengas una buena jugada (duples, 31, varios reyes…). Si pides mus con buenas cartas, le das al rival la oportunidad de mejorar las suyas.
 
 ## Los lances

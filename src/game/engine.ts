@@ -90,6 +90,10 @@ export interface State {
   message: string;
   summary: SummaryLine[];
   winner: Team | null;
+  /** Primera mano de la partida: mus corrido (el que corta el mus queda de mano). */
+  musCorrido: boolean;
+  /** Junto a quién está el mazo (normalmente, el que reparte). En el mus corrido va pasando. */
+  deckSeat: number;
   /** Pareja que ha ganado la partida (al mejor de 3 juegos), si ya ha terminado. */
   matchWinner: Team | null;
   /** Puntos apuntados en esta mano (para el marcador animado). */
@@ -122,6 +126,8 @@ export interface EngineIO {
 
 export class Engine {
   state: State;
+  /** Manos jugadas en la partida actual (la primera es a mus corrido). */
+  private matchHands = 0;
   botDelay = 900;
 
   constructor(private io: EngineIO) {
@@ -145,6 +151,8 @@ export class Engine {
       summary: [],
       winner: null,
       matchWinner: null,
+      musCorrido: false,
+      deckSeat: 0,
       lastGain: [0, 0],
     };
   }
@@ -200,12 +208,15 @@ export class Engine {
     s.turn = null;
     s.reveal = false;
     s.mano = Math.floor(Math.random() * 4);
+    s.musCorrido = false;
+    s.deckSeat = dealerOf(s.mano);
     s.message = 'Nueva partida';
     this.emit();
   }
 
   /** Una partida: al mejor de 3 juegos de 40 tantos. */
   private async playMatch() {
+    this.matchHands = 0;
     {
       this.state.games = [0, 0];
       this.state.matchWinner = null;
@@ -275,7 +286,16 @@ export class Engine {
     s.lastGain = [0, 0];
     s.declared = { pares: [null, null, null, null], juego: [null, null, null, null] };
     s.bubbles = [null, null, null, null];
-    s.message = dealMessage(s.mano);
+    this.matchHands++;
+    s.musCorrido = this.matchHands === 1;
+    s.deckSeat = dealerOf(s.mano);
+    if (s.musCorrido) {
+      const d = dealerOf(s.mano);
+      const first = s.mano === HUMAN ? 'hablas tú primero' : `habla primero ${SEAT_NAMES[s.mano]}`;
+      s.message = `Mus corrido · ${d === HUMAN ? 'repartes tú' : `reparte ${SEAT_NAMES[d]}`} · ${first}`;
+    } else {
+      s.message = dealMessage(s.mano);
+    }
     this.emit();
     // Tiempo para recoger las cartas, llevar el mazo al que reparte y barajar
     await sleep(s.handNo === 1 ? 1100 : 1950);
@@ -302,21 +322,41 @@ export class Engine {
     const s = this.state;
     for (;;) {
       s.phase = 'mus';
-      s.message = '¿Mus?';
+      s.message = s.musCorrido ? '¿Mus? · mus corrido' : '¿Mus?';
       s.bubbles = [null, null, null, null];
       this.emit();
       let cut = false;
+      let cutter = -1;
       for (const seat of seatOrder(s.mano)) {
         const a = await this.decide(seat, { type: 'mus' });
         if (a.kind === 'corto') {
           this.say(seat, 'No hay mus', 'no');
           cut = true;
+          cutter = seat;
           break;
         }
         this.say(seat, 'Mus', 'yes');
+        if (s.musCorrido) {
+          s.deckSeat = seat;
+          const next = (seat + 1) % 4;
+          // Si es el último de la vuelta, no hay a quién pasar: toca descartar
+          if (next === s.mano) s.message = 'Todos piden mus: el mazo ha dado la vuelta';
+          else s.message = next === HUMAN ? 'Te pasan el mazo: si cortas, eres mano' : `Mazo a ${SEAT_NAMES[next]}`;
+          this.emit();
+        }
       }
       s.turn = null;
       if (cut) {
+        if (s.musCorrido) {
+          // Mus corrido: el que corta queda de mano y reparte el de su izquierda
+          s.mano = cutter;
+          s.deckSeat = dealerOf(cutter);
+          s.message = cutter === HUMAN ? 'Cortas el mus: eres mano' : `Corta ${SEAT_NAMES[cutter]}: es mano`;
+          this.emit();
+          await sleep(1400);
+          s.musCorrido = false;
+          return;
+        }
         await sleep(900);
         return;
       }
@@ -336,6 +376,14 @@ export class Engine {
       }
       s.turn = null;
       await sleep(300);
+      if (s.musCorrido) {
+        // Mus corrido: el mazo pasa al siguiente, que reparte los descartes, y la mano corre un puesto
+        s.mano = (s.mano + 1) % 4;
+        s.deckSeat = dealerOf(s.mano);
+        s.message = `Mus corrido · la mano pasa a ${s.mano === HUMAN ? 'ti' : SEAT_NAMES[s.mano]}`;
+        this.emit();
+        await sleep(1200);
+      }
       s.message = dealerOf(s.mano) === HUMAN ? 'Das cartas tú' : `Da cartas ${SEAT_NAMES[dealerOf(s.mano)]}`;
       this.emit();
       await sleep(350);

@@ -1124,6 +1124,19 @@ button {
   color: rgba(255, 255, 255, 0.8);
 }
 
+.corrido-tag {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #2b1d00;
+  background: var(--gold);
+  box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.6);
+  animation: pop 0.3s;
+}
+
 /* ---------- Controles ---------- */
 
 .controls {

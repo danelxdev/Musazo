@@ -1,4 +1,4 @@
-import { type State, dealerOf } from '../game/engine';
+import type { State } from '../game/engine';
 import { backHtml } from './cards';
 import { play } from './sound';
 
@@ -53,7 +53,7 @@ export class DeckFx {
 
   afterRender(s: State, prev: Map<string, Snap>, root: HTMLElement) {
     this.zone.classList.toggle('on', s.phase !== 'intro');
-    const dealer = String(dealerOf(s.mano));
+    const dealer = String(s.deckSeat);
     const newHand = s.handNo !== this.lastHand;
 
     if (newHand) {
@@ -72,7 +72,10 @@ export class DeckFx {
         }, 450);
       }
     } else {
-      if (!this.zone.dataset.seat) this.zone.dataset.seat = dealer;
+      if (this.zone.dataset.seat !== dealer) {
+        this.zone.dataset.seat = dealer;
+        play('deal');
+      }
       const current = new Set(s.hands.flat().map((c) => c.id));
       let i = 0;
       for (const [id, snap] of prev) if (!current.has(id)) this.discard(snap, i++);

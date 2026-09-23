@@ -459,7 +459,8 @@ export class TableUI {
     const isTurn = s.turn === seat && !s.reveal;
     const name = SEAT_NAMES[seat];
     const role = seat === 2 ? 'compañera' : seat === HUMAN ? '' : 'rival';
-    const mano = s.mano === seat ? '<span class="mano" title="Es mano">mano</span>' : '';
+    const deciding = s.musCorrido && (s.phase === 'deal' || s.phase === 'mus' || s.phase === 'discard');
+    const mano = s.mano === seat && !deciding ? '<span class="mano" title="Es mano">mano</span>' : '';
     const info = (seat === HUMAN || s.reveal) && s.hands[seat].length === 4
       ? `<div class="handinfo">${describePares(s.hands[seat])} · ${describeJuego(s.hands[seat])}</div>` : '';
     return `
@@ -482,7 +483,9 @@ export class TableUI {
         : `<div class="bet"><b>${s.bet.amount}</b> <small>envite · ${TEAM_NAMES[s.bet.team]}</small></div>`;
     }
     const msg = s.message ? `<div class="msg">${s.message}</div>` : '';
-    return `${msg}${bet}`;
+    const corrido = s.musCorrido && (s.phase === 'deal' || s.phase === 'mus' || s.phase === 'discard')
+      ? '<div class="corrido-tag" title="Primera mano: quien corte el mus será mano">Mus corrido</div>' : '';
+    return `${corrido}${msg}${bet}`;
   }
 
   private renderControls(s: State) {
@@ -502,7 +505,7 @@ export class TableUI {
       </div>`;
     switch (p.req.type) {
       case 'mus':
-        return `${bar}<div class="prompt">¿Pides mus?</div><div class="row">${btn('mus', 'Mus', 'primary')}${btn('corto', 'No hay mus')}</div>`;
+        return `${bar}<div class="prompt">${s.musCorrido ? 'Mus corrido · si cortas, serás mano' : '¿Pides mus?'}</div><div class="row">${btn('mus', 'Mus', 'primary')}${btn('corto', 'No hay mus')}</div>`;
       case 'discard': {
         const n = this.selected.size;
         return `${bar}<div class="prompt">Toca las cartas que quieres cambiar</div>
