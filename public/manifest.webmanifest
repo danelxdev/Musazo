@@ -3,13 +3,14 @@
   "short_name": "Musazo",
   "description": "Mus en el navegador y contador de tantos para jugar con cartas de verdad.",
   "lang": "es",
-  "start_url": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0b1119",
   "theme_color": "#0b1119",
-  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }],
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }],
   "shortcuts": [
-    { "name": "Contador de tantos", "short_name": "Contador", "url": "/#contador" },
-    { "name": "Jugar una partida", "short_name": "Jugar", "url": "/#jugar" }
+    { "name": "Contador de tantos", "short_name": "Contador", "url": "./#contador" },
+    { "name": "Jugar una partida", "short_name": "Jugar", "url": "./#jugar" }
   ]
 }

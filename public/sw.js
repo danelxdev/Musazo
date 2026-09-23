@@ -1,7 +1,11 @@
 // Musazo sin conexión: primero la red y, si no hay, lo último que se guardó.
 // Así el contador funciona en la calle aunque no haya cobertura.
 const CACHE = 'musazo-v1';
-const SHELL = ['/', '/felt.jpg', '/logo-light.png', '/logo-dark.png', '/favicon.svg', '/manifest.webmanifest'];
+// Rutas relativas a este archivo: sirve igual en la raíz que en /Musazo/ (GitHub Pages)
+const HOME = new URL('./', self.location).href;
+const SHELL = ['./', 'felt.jpg', 'logo-light.png', 'logo-dark.png', 'favicon.svg', 'manifest.webmanifest'].map(
+  (p) => new URL(p, self.location).href,
+);
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
@@ -33,7 +37,7 @@ self.addEventListener('fetch', (e) => {
         return res;
       })
       .catch(() =>
-        caches.match(req, { ignoreSearch: true }).then((hit) => hit || (req.mode === 'navigate' ? caches.match('/') : Response.error())),
+        caches.match(req, { ignoreSearch: true }).then((hit) => hit || (req.mode === 'navigate' ? caches.match(HOME) : Response.error())),
       ),
   );
 });
