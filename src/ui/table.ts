@@ -29,6 +29,7 @@ const ICON = {
   book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
   sound: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  tally: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M3.5 16.5l17-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   muted: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
 };
 
@@ -39,6 +40,7 @@ const LAYOUT = `
     <div class="scoreboard" data-region="score"></div>
     <div class="top-actions">
       <button class="pill-btn restart-btn" data-action="restart" aria-label="Reiniciar partida">${ICON.restart}<span>Reiniciar</span></button>
+      <button class="pill-btn counter-btn" data-action="counter" aria-label="Contador de tantos">${ICON.tally}<span>Contador</span></button>
       <button class="pill-btn" data-action="rules" aria-label="Reglas del mus">${ICON.book}<span>Reglas</span></button>
       <button class="icon-btn" data-action="mute" aria-label="Sonido"></button>
     </div>
@@ -94,6 +96,7 @@ export class TableUI {
   private turnStart = 0;
   onStart: (() => void) | null = null;
   onRules: (() => void) | null = null;
+  onCounter: (() => void) | null = null;
   onRestart: (() => void) | null = null;
   /** Avisa cuando se abre o cierra el diálogo de confirmación (para pausar la partida). */
   onConfirmToggle: ((open: boolean) => void) | null = null;
@@ -150,6 +153,10 @@ export class TableUI {
     }
     if (act === 'rules') {
       this.onRules?.();
+      return;
+    }
+    if (act === 'counter') {
+      this.onCounter?.();
       return;
     }
     if (act === 'start') {
@@ -535,7 +542,10 @@ export class TableUI {
         <img class="intro-logo" src="${BASE}logo-light.png" alt="musazo" width="1400" height="218">
         <p class="tag">Mus a 8 reyes · al mejor de 3 juegos · tú y Maite contra Iñaki y Koldo</p>
         <button class="btn primary big play" data-action="start">Jugar</button>
-        <button class="link-btn" data-action="rules">¿Primera vez? Lee las reglas</button>
+        <div class="intro-links">
+          <button class="link-btn" data-action="rules">¿Primera vez? Lee las reglas</button>
+          <button class="link-btn" data-action="counter">¿Con cartas de verdad? Cuenta los tantos aquí</button>
+        </div>
       </div>`;
     }
     if (s.phase === 'gameover' && s.winner !== null) {

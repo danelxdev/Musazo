@@ -1326,6 +1326,13 @@ button {
   color: var(--cream);
 }
 
+.intro-links {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
 /* ---------- Capas: portada, recuento, final ---------- */
 
 .overlay {
@@ -2059,6 +2066,11 @@ button {
   }
 
   .pill-btn span {
+    display: none;
+  }
+
+  /* En partida no cabe: el contador queda en la portada */
+  .app.playing .counter-btn {
     display: none;
   }
 

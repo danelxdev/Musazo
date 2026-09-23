@@ -2,6 +2,7 @@ import './style.css';
 import { Engine, timing } from './game/engine';
 import { TableUI } from './ui/table';
 import { RulesPanel } from './ui/rules';
+import { CounterView } from './counter/view';
 import { preloadCards } from './ui/cards';
 import { play, unlockAudio } from './ui/sound';
 
@@ -15,11 +16,14 @@ const engine = new Engine({
   cancel: () => ui.cancel(),
 });
 
-// La partida se detiene mientras se leen las reglas o se confirma el reinicio
+const counter = new CounterView(document.body);
+
+// La partida se detiene mientras se leen las reglas, se usa el contador o se confirma el reinicio
 let rulesOpen = false;
+let counterOpen = false;
 let confirmOpen = false;
 const syncPause = () => {
-  const p = rulesOpen || confirmOpen;
+  const p = rulesOpen || counterOpen || confirmOpen;
   timing.paused = p;
   ui.setPaused(p);
 };
@@ -28,7 +32,14 @@ rules.onToggle = (open) => {
   rulesOpen = open;
   syncPause();
 };
-ui.onConfirmToggle = (open) => {
+ui.onCounter = () => counter.open();
+counter.onRules = () => rules.open();
+counter.blocked = () => rules.isOpen;
+counter.onToggle = (open) => {
+  counterOpen = open;
+  syncPause();
+};
+ui.onConfirmToggle =(open) => {
   confirmOpen = open;
   syncPause();
 };
@@ -53,3 +64,12 @@ preloadCards();
 
 // Enlace directo a la partida: /#jugar
 if (location.hash === '#jugar') ui.onStart?.();
+// Enlace directo al contador de tantos: /#contador
+if (location.hash === '#contador') counter.open();
+
+// Sin conexión (para usar el contador en la calle sin cobertura)
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined);
+  });
+}

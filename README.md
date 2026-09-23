@@ -8,6 +8,17 @@ Juego de mus en el navegador: un tapete de fieltro, la baraja española de siemp
 - Reglas completas con ejemplos animados (botón **Reglas**, arriba a la derecha).
 - Sin menús: entras, pulsas **Jugar** y a jugar.
 
+### Contador de tantos
+
+Para cuando jugáis con cartas de verdad y no hay piedras a mano (botón **Contador**, o directamente en `/#contador`):
+
+- Marcador por pareja con piedras y amarracos: tocar el número suma 1, y hay botones de −1 / +1 / +2 / +5. El nombre de cada pareja se cambia tocándolo.
+- Lances de la mano (Grande, Chica, Pares, Juego/Punto): tocar el número del lance suma 2, con −1 / +1 / +5 al lado; al final se mandan con una flecha a la pareja que gana cada lance.
+- **Órdago** manteniendo pulsado: si llegas al final, el juego es para esa pareja.
+- Juegos y partidas (a 30 o 40, a 1, 3 o 5 juegos), deshacer (también Ctrl+Z), reglas a mano y estadísticas: tantos por lance, juegos y registro de jugadas.
+- En el móvil se ve en horizontal (si está en vertical, el contador se gira; se puede desactivar en Ajustes).
+- Se guarda en el navegador, mantiene la pantalla encendida, vibra al tocar y funciona sin conexión; se puede instalar en el móvil con acceso directo al contador.
+
 ## Desarrollo
 
 ```bash
