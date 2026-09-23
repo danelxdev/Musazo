@@ -200,7 +200,7 @@ export function confetti(host: HTMLElement, colors: string[], power = 1) {
 }
 
 /** Aviso breve en la parte baja de la pantalla. */
-export function toast(host: HTMLElement, text: string, action?: { label: string; run: () => void }) {
+export function toast(host: HTMLElement, text: string, action?: { label: string; run: () => void }, ms?: number) {
   host.querySelectorAll('.cx-toast').forEach((t) => t.remove());
   const el = document.createElement('div');
   el.className = 'cx-toast';
@@ -220,5 +220,5 @@ export function toast(host: HTMLElement, text: string, action?: { label: string;
   window.setTimeout(() => {
     el.classList.add('out');
     window.setTimeout(() => el.remove(), 300);
-  }, action ? 4200 : 2400);
+  }, ms ?? (action ? 4200 : 2400));
 }

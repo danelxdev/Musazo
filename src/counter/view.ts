@@ -19,6 +19,38 @@ const UNDO_SAVED = 15;
 const HOLD_MS = 1300;
 const LOGO = `${import.meta.env.BASE_URL}logo-light.png`;
 const TEAM_COLOR = ['#f2c14e', '#8db2ec'];
+/** Última vista usada, para volver al contador al abrir la app instalada. */
+const VIEW_KEY = 'musazo:vista';
+
+const isTouch = () => matchMedia('(pointer: coarse)').matches;
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+/** Abierta como app instalada (sin barras del navegador). */
+export const isStandalone = () =>
+  matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+export const lastViewWasCounter = () => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'contador';
+  } catch {
+    return false;
+  }
+};
+const rememberView = (v: string) => {
+  try {
+    if (v) localStorage.setItem(VIEW_KEY, v);
+    else localStorage.removeItem(VIEW_KEY);
+  } catch {
+    // Sin almacenamiento: no pasa nada
+  }
+};
+
+/** Aviso de instalación de Chrome/Android, guardado para ofrecerlo desde Ajustes. */
+type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
+let installPrompt: InstallPrompt | null = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e as InstallPrompt;
+});
+window.addEventListener('appinstalled', () => (installPrompt = null));
 
 const ICON = {
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
@@ -96,6 +128,8 @@ export class CounterView {
   private pushed = false;
   private lastFocus: HTMLElement | null = null;
   private wake: WakeLockSentinel | null = null;
+  /** El aviso de pantalla completa sale una vez por visita. */
+  private hinted = false;
   onToggle: ((open: boolean) => void) | null = null;
   /** Abre las reglas (van por encima del contador). */
   onRules: (() => void) | null = null;
@@ -243,6 +277,11 @@ export class CounterView {
     return !this.el.hidden;
   }
 
+  /** Elemento del contador (para colocar dentro otros paneles, como las reglas). */
+  get root() {
+    return this.el;
+  }
+
   // ---------- Abrir y cerrar ----------
 
   /** Abre el contador y deja la dirección en /#contador (el botón «atrás» del móvil lo cierra). */
@@ -279,7 +318,26 @@ export class CounterView {
     requestAnimationFrame(() => this.el.classList.add('open'));
     this.el.focus();
     void this.keepAwake();
+    rememberView('contador');
+    this.fullscreenHint();
     this.onToggle?.(true);
+  }
+
+  /**
+   * En el móvil, las barras del navegador quitan mucho sitio: se ofrece la pantalla completa
+   * (Android) o se explica cómo añadirlo a la pantalla de inicio (iPhone, que no la permite).
+   */
+  private fullscreenHint() {
+    if (this.hinted || !isTouch() || isStandalone() || document.fullscreenElement) return;
+    this.hinted = true;
+    window.setTimeout(() => {
+      if (!this.isOpen || document.fullscreenElement) return;
+      if (document.fullscreenEnabled) {
+        toast(this.toasts, 'Quita las barras del navegador', { label: 'Pantalla completa', run: () => this.toggleFullscreen() }, 7000);
+      } else if (isIOS()) {
+        toast(this.toasts, 'Sin barras: Compartir → «Añadir a pantalla de inicio»', { label: 'Vale', run: () => undefined }, 9000);
+      }
+    }, 900);
   }
 
   private hide() {
@@ -290,6 +348,7 @@ export class CounterView {
     void this.wake?.release().catch(() => undefined);
     this.wake = null;
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    rememberView('');
     this.lastFocus?.focus();
     this.onToggle?.(false);
   }
@@ -352,6 +411,7 @@ export class CounterView {
       case 'settings': this.openSettings(); break;
       case 'stats': this.openStats(); break;
       case 'rules': this.onRules?.(); break;
+      case 'install': void this.install(); break;
       case 'sound':
         toggleMute();
         this.renderTools();
@@ -701,12 +761,38 @@ export class CounterView {
           <span>Horizontal en el móvil<small>Si el móvil está en vertical, el contador se gira para verse en horizontal</small></span>
           <button type="button" class="cx-switch" role="switch" data-c="switch" data-name="landscape" aria-checked="${t.landscape}" aria-label="Horizontal en el móvil"><i></i></button>
         </div>
+        ${this.installRow()}
         <div class="confirm-actions">
           <button type="button" class="btn quiet" data-c="dismiss">Cancelar</button>
           <button type="submit" class="btn primary">Guardar</button>
         </div>
       </form>`;
     this.showDialog(el);
+  }
+
+  /** Instalar como app: sin barras del navegador y con acceso directo al contador. */
+  private installRow() {
+    if (isStandalone()) return '';
+    if (installPrompt) {
+      return `<div class="cx-field cx-row">
+          <span>Instalar como app<small>Se abre sin las barras del navegador y funciona sin conexión</small></span>
+          <button type="button" class="btn quiet cx-install" data-c="install">Instalar</button>
+        </div>`;
+    }
+    if (isIOS()) {
+      return `<div class="cx-field">
+          <span>Sin barras del navegador<small>En Safari: botón Compartir → «Añadir a pantalla de inicio». Se abrirá a pantalla completa, como una app.</small></span>
+        </div>`;
+    }
+    return '';
+  }
+
+  private async install() {
+    const p = installPrompt;
+    if (!p) return;
+    installPrompt = null;
+    this.closeDialog();
+    await p.prompt().catch(() => undefined);
   }
 
   private saveSettings() {

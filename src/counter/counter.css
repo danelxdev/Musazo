@@ -71,6 +71,11 @@
   touch-action: manipulation;
 }
 
+/* Las reglas, abiertas desde el contador, van dentro de él y giran con él */
+.counter .rules {
+  position: absolute;
+}
+
 /* ---------- Cabecera y pie ---------- */
 
 .cx-head {

@@ -29,6 +29,7 @@ const ICON = {
   book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
   sound: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  exit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   tally: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M3.5 16.5l17-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   muted: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
 };
@@ -36,7 +37,10 @@ const ICON = {
 const LAYOUT = `
 <div class="app">
   <header class="topbar">
-    <img class="brand" src="${BASE}logo-light.png" alt="musazo" width="1400" height="218">
+    <div class="brand-wrap">
+      <button class="icon-btn exit-btn" data-action="exit" aria-label="Salir al inicio" title="Salir al inicio">${ICON.exit}</button>
+      <img class="brand" src="${BASE}logo-light.png" alt="musazo" width="1400" height="218">
+    </div>
     <div class="scoreboard" data-region="score"></div>
     <div class="top-actions">
       <button class="pill-btn restart-btn" data-action="restart" aria-label="Reiniciar partida">${ICON.restart}<span>Reiniciar</span></button>
@@ -62,11 +66,11 @@ const LAYOUT = `
   <div class="confirm" hidden>
     <div class="confirm-scrim" data-action="restart-cancel"></div>
     <div class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-text">
-      <h3 id="confirm-title">¿Reiniciar la partida?</h3>
-      <p id="confirm-text">Se perderán los tantos y los juegos de la partida actual y empezaréis de cero.</p>
+      <h3 id="confirm-title"></h3>
+      <p id="confirm-text"></p>
       <div class="confirm-actions">
         <button class="btn quiet" data-action="restart-cancel">Cancelar</button>
-        <button class="btn danger" data-action="restart-confirm">Reiniciar</button>
+        <button class="btn danger" data-action="restart-confirm"></button>
       </div>
     </div>
   </div>
@@ -98,6 +102,9 @@ export class TableUI {
   onRules: (() => void) | null = null;
   onCounter: (() => void) | null = null;
   onRestart: (() => void) | null = null;
+  /** Salir de la partida y volver a la portada. */
+  onExit: (() => void) | null = null;
+  private confirmKind: 'restart' | 'exit' = 'restart';
   /** Avisa cuando se abre o cierra el diálogo de confirmación (para pausar la partida). */
   onConfirmToggle: ((open: boolean) => void) | null = null;
 
@@ -138,8 +145,13 @@ export class TableUI {
       this.renderMute();
       return;
     }
-    if (act === 'restart') {
-      this.openConfirm();
+    if (act === 'restart' || act === 'exit') {
+      // Con la partida ya terminada no hace falta confirmar la salida
+      if (act === 'exit' && this.state?.matchWinner != null) {
+        this.onExit?.();
+        return;
+      }
+      this.openConfirm(act);
       return;
     }
     if (act === 'restart-cancel') {
@@ -148,7 +160,8 @@ export class TableUI {
     }
     if (act === 'restart-confirm') {
       this.closeConfirm();
-      this.onRestart?.();
+      if (this.confirmKind === 'exit') this.onExit?.();
+      else this.onRestart?.();
       return;
     }
     if (act === 'rules') {
@@ -204,8 +217,15 @@ export class TableUI {
     return !this.root.querySelector<HTMLElement>('.confirm')!.hidden;
   }
 
-  private openConfirm() {
+  private openConfirm(kind: 'restart' | 'exit') {
+    this.confirmKind = kind;
     const el = this.root.querySelector<HTMLElement>('.confirm')!;
+    const copy = kind === 'exit'
+      ? ['¿Salir de la partida?', 'Volverás a la pantalla principal y se perderá la partida actual.', 'Salir']
+      : ['¿Reiniciar la partida?', 'Se perderán los tantos y los juegos de la partida actual y empezaréis de cero.', 'Reiniciar'];
+    el.querySelector('#confirm-title')!.textContent = copy[0];
+    el.querySelector('#confirm-text')!.textContent = copy[1];
+    el.querySelector('[data-action="restart-confirm"]')!.textContent = copy[2];
     el.hidden = false;
     requestAnimationFrame(() => el.classList.add('open'));
     el.querySelector<HTMLButtonElement>('[data-action="restart-cancel"].btn')?.focus();
@@ -569,6 +589,7 @@ export class TableUI {
           <span class="sb-juegos t1">${dots(1)}</span>
         </div>
         ${this.continueHtml()}
+        ${matchOver ? '<button class="link-btn end-exit" data-action="exit">Volver al inicio</button>' : ''}
       </div>`;
     }
     if (s.phase === 'showdown' && s.summary.length) {

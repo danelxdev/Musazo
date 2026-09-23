@@ -69,6 +69,18 @@ button {
   min-height: 60px;
 }
 
+.brand-wrap {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app:not(.playing) .exit-btn {
+  display: none;
+}
+
 .brand {
   justify-self: start;
   height: clamp(16px, 2.6vh, 24px);
@@ -1326,6 +1338,17 @@ button {
   color: var(--cream);
 }
 
+.panel .end-exit {
+  display: block;
+  margin: 10px auto 0;
+  color: #6b7686;
+  animation: none;
+}
+
+.panel .end-exit:hover {
+  color: var(--ink);
+}
+
 .intro-links {
   display: flex;
   flex-direction: column;
@@ -2069,8 +2092,9 @@ button {
     display: none;
   }
 
-  /* En partida no cabe: el contador queda en la portada */
-  .app.playing .counter-btn {
+  /* En partida no cabe: el contador queda en la portada y el logo deja sitio al botón de salir */
+  .app.playing .counter-btn,
+  .app.playing .brand {
     display: none;
   }
 

@@ -80,6 +80,11 @@ export class RulesPanel {
     return !this.el.hidden;
   }
 
+  /** Coloca el panel dentro de otro elemento (p. ej. el contador, para girar con él). */
+  mountIn(host: HTMLElement) {
+    if (this.el.parentElement !== host) host.appendChild(this.el);
+  }
+
   private render() {
     if (this.rendered) return;
     this.rendered = true;

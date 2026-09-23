@@ -124,40 +124,47 @@ export interface EngineIO {
   cancel?(): void;
 }
 
+/** Estado de la portada, antes de empezar a jugar. */
+function introState(): State {
+  return {
+    phase: 'intro',
+    handNo: 0,
+    hands: [[], [], [], []],
+    deck: [],
+    discards: [],
+    mano: Math.floor(Math.random() * 4),
+    scores: [0, 0],
+    games: [0, 0],
+    bubbles: [null, null, null, null],
+    lance: null,
+    bet: null,
+    records: [],
+    declared: { pares: [null, null, null, null], juego: [null, null, null, null] },
+    reveal: false,
+    turn: null,
+    message: '',
+    summary: [],
+    winner: null,
+    matchWinner: null,
+    musCorrido: false,
+    deckSeat: 0,
+    lastGain: [0, 0],
+  };
+}
+
 export class Engine {
-  state: State;
+  state: State = introState();
   /** Manos jugadas en la partida actual (la primera es a mus corrido). */
   private matchHands = 0;
+  /** Al cortar la partida: volver a la portada en vez de empezar otra. */
+  private exiting = false;
   botDelay = 900;
 
-  constructor(private io: EngineIO) {
-    this.state = {
-      phase: 'intro',
-      handNo: 0,
-      hands: [[], [], [], []],
-      deck: [],
-      discards: [],
-      mano: Math.floor(Math.random() * 4),
-      scores: [0, 0],
-      games: [0, 0],
-      bubbles: [null, null, null, null],
-      lance: null,
-      bet: null,
-      records: [],
-      declared: { pares: [null, null, null, null], juego: [null, null, null, null] },
-      reveal: false,
-      turn: null,
-      message: '',
-      summary: [],
-      winner: null,
-      matchWinner: null,
-      musCorrido: false,
-      deckSeat: 0,
-      lastGain: [0, 0],
-    };
-  }
+  constructor(private io: EngineIO) {}
 
   private emit() {
+    // Saliendo a la portada: la partida que se está cortando ya no se pinta
+    if (this.exiting) return;
     this.io.onChange(this.state);
   }
 
@@ -168,6 +175,7 @@ export class Engine {
   }
 
   private async decide(seat: number, req: Request): Promise<Action> {
+    if (this.exiting) throw new Restart();
     this.state.turn = seat;
     this.emit();
     if (seat === HUMAN) return this.io.ask(req, this.state);
@@ -181,9 +189,22 @@ export class Engine {
         await this.playMatch();
       } catch (e) {
         if (!(e instanceof Restart)) throw e;
+        if (this.exiting) {
+          this.exiting = false;
+          this.state = introState();
+          this.emit();
+          return;
+        }
         this.resetMatch();
       }
     }
+  }
+
+  /** Corta la partida en curso y vuelve a la portada (`run()` termina). */
+  stop() {
+    this.exiting = true;
+    this.restart();
+    this.io.onChange(introState());
   }
 
   /** Corta la partida en curso y empieza una nueva de cero. */

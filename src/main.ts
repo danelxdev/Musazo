@@ -2,7 +2,7 @@ import './style.css';
 import { Engine, timing } from './game/engine';
 import { TableUI } from './ui/table';
 import { RulesPanel } from './ui/rules';
-import { CounterView } from './counter/view';
+import { CounterView, isStandalone, lastViewWasCounter } from './counter/view';
 import { preloadCards } from './ui/cards';
 import { play, unlockAudio } from './ui/sound';
 
@@ -27,13 +27,20 @@ const syncPause = () => {
   timing.paused = p;
   ui.setPaused(p);
 };
-ui.onRules = () => rules.open();
+ui.onRules = () => {
+  rules.mountIn(document.body);
+  rules.open();
+};
 rules.onToggle = (open) => {
   rulesOpen = open;
   syncPause();
 };
 ui.onCounter = () => counter.open();
-counter.onRules = () => rules.open();
+// Dentro del contador, para que las reglas giren con él cuando está en horizontal
+counter.onRules = () => {
+  rules.mountIn(counter.root);
+  rules.open();
+};
 counter.blocked = () => rules.isOpen;
 counter.onToggle = (open) => {
   counterOpen = open;
@@ -52,11 +59,21 @@ ui.onRestart = () => {
 };
 
 let started = false;
+/** La partida en marcha; al salir a la portada termina y la siguiente espera a que acabe. */
+let running: Promise<void> = Promise.resolve();
 ui.onStart = () => {
   if (started) return;
   started = true;
   unlockAudio();
-  void engine.run();
+  running = running.then(() => engine.run());
+};
+ui.onExit = () => {
+  if (!started) return;
+  started = false;
+  confirmOpen = false;
+  ui.setPaused(false);
+  engine.stop();
+  syncPause();
 };
 
 ui.render(engine.state);
@@ -66,6 +83,8 @@ preloadCards();
 if (location.hash === '#jugar') ui.onStart?.();
 // Enlace directo al contador de tantos: /#contador
 if (location.hash === '#contador') counter.open();
+// Como app instalada, se vuelve a donde se estaba (normalmente el contador)
+else if (!location.hash && isStandalone() && lastViewWasCounter()) counter.open();
 
 // Sin conexión (para usar el contador en la calle sin cobertura)
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

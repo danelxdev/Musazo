@@ -4,7 +4,7 @@ Juego de mus en el navegador: un tapete de fieltro, la baraja española de siemp
 
 - Mus a 8 reyes, al mejor de 3 juegos de 40 tantos: mus y descartes, Grande, Chica, Pares, Juego/Punto, envites, órdagos y deje.
 - Piedras y amarracos sobre el tapete, y el mazo delante del que reparte, como en una mesa de verdad.
-- 20 segundos por turno, resumen de cada lance en pantalla y botón para reiniciar la partida.
+- 20 segundos por turno, resumen de cada lance en pantalla, botón para reiniciar la partida y flecha para salir a la pantalla principal.
 - Reglas completas con ejemplos animados (botón **Reglas**, arriba a la derecha).
 - Sin menús: entras, pulsas **Jugar** y a jugar.
 
@@ -17,7 +17,8 @@ Para cuando jugáis con cartas de verdad y no hay piedras a mano (botón **Conta
 - **Órdago** manteniendo pulsado: si llegas al final, el juego es para esa pareja.
 - Juegos y partidas (a 30 o 40, a 1, 3 o 5 juegos), deshacer (también Ctrl+Z), reglas a mano y estadísticas: tantos por lance, juegos y registro de jugadas.
 - En el móvil se ve en horizontal (si está en vertical, el contador se gira; se puede desactivar en Ajustes).
-- Se guarda en el navegador, mantiene la pantalla encendida, vibra al tocar y funciona sin conexión; se puede instalar en el móvil con acceso directo al contador.
+- Se guarda en el navegador, mantiene la pantalla encendida, vibra al tocar y funciona sin conexión.
+- Sin las barras del navegador: en Android, botón de pantalla completa (o «Instalar» en Ajustes); en iPhone, Compartir → «Añadir a pantalla de inicio». Instalada, se abre donde se dejó.
 
 ## Desarrollo
 

@@ -1,9 +1,9 @@
 // Musazo sin conexión: primero la red y, si no hay, lo último que se guardó.
 // Así el contador funciona en la calle aunque no haya cobertura.
-const CACHE = 'musazo-v1';
+const CACHE = 'musazo-v2';
 // Rutas relativas a este archivo: sirve igual en la raíz que en /Musazo/ (GitHub Pages)
 const HOME = new URL('./', self.location).href;
-const SHELL = ['./', 'felt.jpg', 'logo-light.png', 'logo-dark.png', 'favicon.svg', 'manifest.webmanifest'].map(
+const SHELL = ['./', 'felt.jpg', 'logo-light.png', 'logo-dark.png', 'favicon.svg', 'manifest.webmanifest', 'icon-192.png', 'apple-touch-icon.png'].map(
   (p) => new URL(p, self.location).href,
 );
 
