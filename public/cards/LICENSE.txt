@@ -1,0 +1,20 @@
+Cartas de la baraja española — Musazo
+=====================================
+
+Las ilustraciones de estas cartas son una obra derivada de:
+
+  "Baraja española.svg" y "Baraja española cartas blancas sota caballo rey.svg"
+  Autor: Basquetteur — Wikimedia Commons
+  https://commons.wikimedia.org/wiki/File:Baraja_espa%C3%B1ola.svg
+  https://commons.wikimedia.org/wiki/File:Baraja_espa%C3%B1ola_cartas_blancas_sota_caballo_rey.svg
+
+  Caballos: vectorización del mismo arte en
+  https://github.com/gjenkins20/spanish-playing-cards-svg
+
+Licencia original: Creative Commons Reconocimiento-CompartirIgual 3.0 (CC BY-SA 3.0)
+https://creativecommons.org/licenses/by-sa/3.0/deed.es
+
+Cambios realizados por Musazo: separación en cartas individuales, fondo de carta
+eliminado, marcos redibujados en los caballos, monedas de oros sustituidas por un oro
+castellano propio y as de oros rediseñado. Estas cartas modificadas se distribuyen bajo
+la misma licencia CC BY-SA 3.0.
