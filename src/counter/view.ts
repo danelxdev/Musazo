@@ -23,6 +23,7 @@ const TEAM_COLOR = ['#f2c14e', '#8db2ec'];
 const VIEW_KEY = 'musazo:vista';
 
 const isTouch = () => matchMedia('(pointer: coarse)').matches;
+const isIOSChrome = () => /CriOS/.test(navigator.userAgent);
 const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 /** Abierta como app instalada (sin barras del navegador). */
 export const isStandalone = () =>
@@ -57,6 +58,7 @@ const ICON = {
   undo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   gear: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
   book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  share: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   pencil: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   chart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
@@ -130,6 +132,9 @@ export class CounterView {
   private wake: WakeLockSentinel | null = null;
   /** El aviso de pantalla completa sale una vez por visita. */
   private hinted = false;
+  /** Hoja para escribir un nombre cuando el contador está girado (va sin girar, como el teclado). */
+  private nameSheet: HTMLElement;
+  private nameTeam: Team = 0;
   onToggle: ((open: boolean) => void) | null = null;
   /** Abre las reglas (van por encima del contador). */
   onRules: (() => void) | null = null;
@@ -168,9 +173,14 @@ export class CounterView {
       const b = (e.target as HTMLElement).closest<HTMLElement>('.cx-btn, .cx-step, .cx-send, .cx-lance-val, .cx-pts');
       if (b && !(b as HTMLButtonElement).disabled) ripple(b, e);
     });
-    // Nombres de las parejas: se editan en su sitio
+    // Nombres de las parejas: se editan en su sitio (o en una hoja aparte si el contador está girado)
+    this.nameSheet = this.buildNameSheet();
+    window.addEventListener('resize', () => this.syncRotation());
     this.teams.forEach(({ name }, t) => {
       const input = name as HTMLInputElement;
+      input.addEventListener('click', () => {
+        if (this.rotated) this.openNameSheet(t as Team);
+      });
       input.addEventListener('focus', () => input.select());
       input.addEventListener('input', () => (input.size = Math.max(4, input.value.length + 1)));
       input.addEventListener('keydown', (e) => {
@@ -277,6 +287,77 @@ export class CounterView {
     return !this.el.hidden;
   }
 
+  /** El contador está girado por CSS (móvil en vertical con el ajuste de horizontal). */
+  private get rotated() {
+    return this.isOpen && getComputedStyle(this.el).transform !== 'none';
+  }
+
+  /**
+   * El teclado del móvil sigue la orientación del sistema, no la del contador girado.
+   * Girado, el nombre no se escribe en su sitio (saldría de lado), sino en una hoja sin girar.
+   */
+  private syncRotation() {
+    const r = this.rotated;
+    this.teams.forEach(({ name }) => ((name as HTMLInputElement).readOnly = r));
+  }
+
+  private buildNameSheet() {
+    const el = document.createElement('div');
+    el.className = 'confirm cx-namesheet';
+    el.hidden = true;
+    el.innerHTML = `
+      <div class="confirm-scrim" data-n="cancel"></div>
+      <form class="confirm-card" aria-labelledby="cx-name-title">
+        <h3 id="cx-name-title"></h3>
+        <input name="name" maxlength="18" autocomplete="off" spellcheck="false" enterkeyhint="done" aria-labelledby="cx-name-title">
+        <p class="cx-note">El teclado sigue la orientación del móvil. Si quieres que todo, teclado incluido, salga en horizontal, quita el bloqueo de rotación y gira el móvil.</p>
+        <div class="confirm-actions">
+          <button type="button" class="btn quiet" data-n="cancel">Cancelar</button>
+          <button type="submit" class="btn primary">Guardar</button>
+        </div>
+      </form>`;
+    document.body.appendChild(el);
+    const input = el.querySelector('input')!;
+    el.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-n="cancel"]')) this.closeNameSheet();
+    });
+    el.querySelector('form')!.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.commit(S.rename(this.tally, this.nameTeam, input.value));
+      this.closeNameSheet();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        this.closeNameSheet();
+      }
+    });
+    return el;
+  }
+
+  private openNameSheet(team: Team) {
+    this.nameTeam = team;
+    const el = this.nameSheet;
+    el.classList.toggle('t1', team === 1);
+    el.querySelector('h3')!.textContent = `Nombre de la pareja ${team + 1}`;
+    const input = el.querySelector('input')!;
+    input.value = this.tally.names[team];
+    el.hidden = false;
+    requestAnimationFrame(() => el.classList.add('open'));
+    // En el mismo toque, para que el móvil saque el teclado
+    input.focus();
+    input.select();
+  }
+
+  private closeNameSheet() {
+    const el = this.nameSheet;
+    if (el.hidden) return;
+    el.querySelector('input')!.blur();
+    el.classList.remove('open');
+    el.hidden = true;
+    if (this.isOpen) this.el.focus({ preventScroll: true });
+  }
+
   /** Elemento del contador (para colocar dentro otros paneles, como las reglas). */
   get root() {
     return this.el;
@@ -315,6 +396,7 @@ export class CounterView {
     this.sync();
     this.renderTools();
     this.el.hidden = false;
+    this.syncRotation();
     requestAnimationFrame(() => this.el.classList.add('open'));
     this.el.focus();
     void this.keepAwake();
@@ -335,7 +417,7 @@ export class CounterView {
       if (document.fullscreenEnabled) {
         toast(this.toasts, 'Quita las barras del navegador', { label: 'Pantalla completa', run: () => this.toggleFullscreen() }, 7000);
       } else if (isIOS()) {
-        toast(this.toasts, 'Sin barras: Compartir → «Añadir a pantalla de inicio»', { label: 'Vale', run: () => undefined }, 9000);
+        toast(this.toasts, 'Quita las barras del navegador', { label: 'Cómo', run: () => this.openIOSHelp() }, 9000);
       }
     }, 900);
   }
@@ -343,6 +425,7 @@ export class CounterView {
   private hide() {
     if (!this.isOpen) return;
     this.closeDialog();
+    this.closeNameSheet();
     this.el.classList.remove('open');
     this.el.hidden = true;
     void this.wake?.release().catch(() => undefined);
@@ -366,7 +449,7 @@ export class CounterView {
   // ---------- Entrada ----------
 
   private onKey(e: KeyboardEvent) {
-    if (!this.isOpen || this.blocked()) return;
+    if (!this.isOpen || this.blocked() || !this.nameSheet.hidden) return;
     if (e.key === 'Escape') {
       if (this.openDialog) this.closeDialog();
       else this.close();
@@ -416,7 +499,10 @@ export class CounterView {
         toggleMute();
         this.renderTools();
         break;
-      case 'fullscreen': this.toggleFullscreen(); break;
+      case 'fullscreen':
+        if (document.fullscreenEnabled) this.toggleFullscreen();
+        else this.openIOSHelp();
+        break;
       case 'seg':
         btn.parentElement!.querySelectorAll('[data-c="seg"]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
         break;
@@ -563,7 +649,7 @@ export class CounterView {
   }
 
   private renderTools() {
-    const fs = document.fullscreenEnabled
+    const fs = document.fullscreenEnabled || (isIOS() && !isStandalone())
       ? `<button class="icon-btn cx-fs" data-c="fullscreen" aria-label="Pantalla completa" title="Pantalla completa">${document.fullscreenElement ? ICON.shrink : ICON.expand}</button>`
       : '';
     this.el.querySelector('.cx-tools')!.innerHTML = `
@@ -770,6 +856,35 @@ export class CounterView {
     this.showDialog(el);
   }
 
+  /**
+   * En iPhone ninguna web puede ocultar las barras (ni en Safari ni en Chrome):
+   * la única forma es añadirla a la pantalla de inicio y abrirla desde ahí.
+   */
+  private openIOSHelp() {
+    this.toasts.replaceChildren();
+    const chrome = isIOSChrome();
+    const where = chrome
+      ? `el botón Compartir <span class="cx-ico">${ICON.share}</span> de la barra de direcciones, arriba a la derecha`
+      : `el botón Compartir <span class="cx-ico">${ICON.share}</span> de la barra de abajo`;
+    const el = this.el.querySelector<HTMLElement>('[data-dialog="settings"]')!;
+    el.innerHTML = `
+      <div class="confirm-scrim" data-c="dismiss"></div>
+      <div class="confirm-card cx-help" role="document" aria-labelledby="cx-ios-title">
+        <h3 id="cx-ios-title">Pantalla completa en iPhone</h3>
+        <p>El iPhone no deja que una web quite las barras del navegador${chrome ? ', tampoco en Chrome' : ''}. Pero si añades Musazo a la pantalla de inicio, se abre como una app, sin barras:</p>
+        <ol class="cx-steps-list">
+          <li>Toca ${where}.</li>
+          <li>Elige <b>«Añadir a pantalla de inicio»</b> (puede que tengas que deslizar la lista hacia abajo).</li>
+          <li>Abre <b>Musazo</b> desde el icono nuevo de tu pantalla de inicio.</li>
+        </ol>
+        <p class="cx-note">Consejo: con el bloqueo de rotación quitado, al girar el móvil todo sale en horizontal, también el teclado.</p>
+        <div class="confirm-actions">
+          <button type="button" class="btn primary" data-c="dismiss">Entendido</button>
+        </div>
+      </div>`;
+    this.showDialog(el);
+  }
+
   /** Instalar como app: sin barras del navegador y con acceso directo al contador. */
   private installRow() {
     if (isStandalone()) return '';
@@ -781,7 +896,7 @@ export class CounterView {
     }
     if (isIOS()) {
       return `<div class="cx-field">
-          <span>Sin barras del navegador<small>En Safari: botón Compartir → «Añadir a pantalla de inicio». Se abrirá a pantalla completa, como una app.</small></span>
+          <span>Sin barras del navegador<small>Botón Compartir → «Añadir a pantalla de inicio». Se abrirá a pantalla completa, como una app.</small></span>
         </div>`;
     }
     return '';

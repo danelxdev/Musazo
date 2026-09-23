@@ -18,7 +18,7 @@ Para cuando jugáis con cartas de verdad y no hay piedras a mano (botón **Conta
 - Juegos y partidas (a 30 o 40, a 1, 3 o 5 juegos), deshacer (también Ctrl+Z), reglas a mano y estadísticas: tantos por lance, juegos y registro de jugadas.
 - En el móvil se ve en horizontal (si está en vertical, el contador se gira; se puede desactivar en Ajustes).
 - Se guarda en el navegador, mantiene la pantalla encendida, vibra al tocar y funciona sin conexión.
-- Sin las barras del navegador: en Android, botón de pantalla completa (o «Instalar» en Ajustes); en iPhone, Compartir → «Añadir a pantalla de inicio». Instalada, se abre donde se dejó.
+- Sin las barras del navegador: en Android, botón de pantalla completa (o «Instalar» en Ajustes); en iPhone (Safari o Chrome), Compartir → «Añadir a pantalla de inicio», con instrucciones en el propio botón. Instalada, se abre donde se dejó.
 
 ## Desarrollo
 
