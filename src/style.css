@@ -134,6 +134,88 @@ button {
   outline-offset: 3px;
 }
 
+.app:not(.playing) .restart-btn {
+  display: none;
+}
+
+/* Diálogo de confirmación */
+.confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.confirm[hidden] {
+  display: none;
+}
+
+.confirm-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 9, 14, 0.55);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.confirm-card {
+  position: relative;
+  width: min(420px, 100%);
+  padding: 24px 24px 20px;
+  border-radius: 22px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.75);
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+  transition: opacity 0.25s, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.confirm.open .confirm-scrim,
+.confirm.open .confirm-card {
+  opacity: 1;
+  transform: none;
+}
+
+.confirm-card h3 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.confirm-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #4a5567;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.confirm-actions .btn {
+  animation: none;
+  box-shadow: none;
+}
+
+.btn.quiet {
+  color: var(--ink);
+  background: rgba(17, 28, 44, 0.07);
+  border-color: transparent;
+  backdrop-filter: none;
+}
+
+.btn.quiet:hover:not(:disabled) {
+  background: rgba(17, 28, 44, 0.13);
+}
+
 /* ---------- Marcador ---------- */
 
 .scoreboard {
@@ -189,14 +271,30 @@ button {
   animation: floatUp 0.5s ease-out;
 }
 
-.sb-games {
-  margin: 0 6px;
-  padding: 2px 6px;
-  border-radius: 99px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--cream);
-  background: rgba(255, 255, 255, 0.12);
+.sb-juegos {
+  display: inline-flex;
+  gap: 4px;
+  align-self: center;
+}
+
+.sb-juegos i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(246, 239, 226, 0.35);
+  transition: background 0.4s, border-color 0.4s, transform 0.4s;
+}
+
+.t0 .sb-juegos i.won,
+.sb-juegos.t0 i.won {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.t1 .sb-juegos i.won,
+.sb-juegos.t1 i.won {
+  background: var(--blue);
+  border-color: var(--blue);
 }
 
 .sb-mid {
@@ -303,33 +401,10 @@ button {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
 }
 
-.print {
-  position: absolute;
-  left: 50%;
-  top: var(--cy);
-  z-index: 0;
-  width: min(40vw, 440px, 70vh);
-  translate: -50% -50%;
-  pointer-events: none;
-  transition: opacity 0.6s;
-}
-
-.print img {
-  display: block;
-  width: 100%;
-  height: auto;
-  opacity: 0.2;
-  mask: url('/felt.jpg') 0 0 / 360px luminance;
-}
-
-.app:not(.playing) .print {
-  opacity: 0;
-}
-
 .lances {
   position: absolute;
   left: 50%;
-  top: calc(var(--cy) - var(--mini-w) * 0.768 - 22px);
+  top: calc(var(--cy) - var(--band-up, 52px));
   z-index: 1;
   translate: -50% -100%;
   display: flex;
@@ -344,7 +419,42 @@ button {
 
 .lance {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 5.2em;
   transition: color 0.3s;
+}
+
+.lance b {
+  font-weight: 600;
+}
+
+.lance .st {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  white-space: nowrap;
+  color: var(--muted);
+  animation: fade 0.3s;
+}
+
+.lance .st.gold {
+  color: var(--gold);
+}
+
+.lance .st.t0 {
+  color: var(--gold);
+}
+
+.lance .st.t1 {
+  color: var(--blue);
+}
+
+.lance .st.red {
+  color: #ff8a7e;
 }
 
 .lance.done {
@@ -359,7 +469,7 @@ button {
   content: '';
   position: absolute;
   left: 50%;
-  bottom: -9px;
+  top: -10px;
   width: 5px;
   height: 5px;
   translate: calc(-50% - 0.1em) 0;
@@ -383,24 +493,18 @@ button {
   top: clamp(20px, 3.4vh, 36px);
   left: 50%;
   translate: -50% 0;
-  --fx: 0px;
-  --fy: 32vh;
 }
 
 .s1 {
   right: clamp(22px, 3.2vw, 52px);
   top: var(--cy);
   translate: 0 -50%;
-  --fx: -30vw;
-  --fy: 0px;
 }
 
 .s3 {
   left: clamp(22px, 3.2vw, 52px);
   top: var(--cy);
   translate: 0 -50%;
-  --fx: 30vw;
-  --fy: 0px;
 }
 
 .bottom {
@@ -422,8 +526,6 @@ button {
 
 .s0 {
   position: relative;
-  --fx: 0px;
-  --fy: -38vh;
 }
 
 .s0 .hand {
@@ -455,6 +557,38 @@ button {
   font-weight: 700;
   color: #3a2a00;
   background: var(--gold);
+}
+
+.avatar {
+  position: relative;
+}
+
+.ring {
+  position: absolute;
+  inset: -5px;
+  width: calc(100% + 10px);
+  height: calc(100% + 10px);
+  rotate: -90deg;
+  pointer-events: none;
+}
+
+.ring circle {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 100.53;
+  animation: ringDown linear forwards;
+}
+
+@keyframes ringDown {
+  75% {
+    stroke: var(--gold);
+  }
+  to {
+    stroke-dashoffset: 100.53;
+    stroke: var(--red);
+  }
 }
 
 .team1 .avatar {
@@ -543,14 +677,12 @@ button {
   -webkit-user-drag: none;
 }
 
-.card.back {
-  padding: 5.5%;
-}
-
+/* El marco del reverso va con inset (relativo a la propia carta): con padding en %
+   se calcularía sobre el contenedor y cambiaría de grosor según dónde esté la carta. */
 .card.back i {
+  position: absolute;
+  inset: 3.6% 5.5%;
   display: block;
-  width: 100%;
-  height: 100%;
   border-radius: 5% / 3.4%;
   background:
     url('/logo-light.png') center / 66% auto no-repeat,
@@ -614,28 +746,265 @@ button {
   background: var(--gold);
 }
 
-.card.dealt {
-  animation: deal 0.46s cubic-bezier(0.2, 0.75, 0.3, 1) both;
-}
-
 .card.flip {
   animation: flip 0.5s ease-out both;
-}
-
-@keyframes deal {
-  from {
-    transform: translate(var(--fx), var(--fy)) rotate(-24deg) scale(0.6);
-    opacity: 0;
-  }
-  25% {
-    opacity: 1;
-  }
 }
 
 @keyframes flip {
   from {
     transform: perspective(600px) rotateY(90deg);
   }
+}
+
+/* ---------- Piedras y amarracos ---------- */
+
+.stones {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.6s;
+  --ps: 14px;
+  --aw: 10px;
+  --ah: 28px;
+}
+
+.stones.on {
+  opacity: 1;
+}
+
+.stones.narrow {
+  --ps: 10px;
+  --aw: 7px;
+  --ah: 19px;
+}
+
+/* Zonas impresas en el tapete */
+.stone-zone {
+  position: absolute;
+  border-radius: 14px;
+  border: 1px solid rgba(246, 239, 226, 0.13);
+  background: rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+.stone-zone span {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  translate: -50% 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.stone-zone.t0 span {
+  color: rgba(242, 193, 78, 0.65);
+}
+
+.stone-zone.t1 span {
+  color: rgba(141, 178, 236, 0.7);
+}
+
+.stones.narrow .stone-zone span {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+
+/* Montón central */
+.bolsa {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.08) 70%, transparent 72%);
+}
+
+.bolsa::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1px dashed rgba(246, 239, 226, 0.18);
+}
+
+.bolsa i {
+  position: absolute;
+  translate: -50% -50%;
+}
+
+.bolsa .piedra {
+  width: calc(var(--ps) * 0.85);
+  height: calc(var(--ps) * 0.85);
+}
+
+.bolsa .amarraco {
+  width: calc(var(--aw) * 0.85);
+  height: calc(var(--ah) * 0.85);
+}
+
+.piedra,
+.amarraco,
+.stone-flash {
+  display: block;
+}
+
+.stone {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+
+.piedra {
+  width: var(--ps);
+  height: var(--ps);
+  border-radius: 46% 54% 52% 48% / 52% 46% 54% 48%;
+  background: radial-gradient(circle at 34% 30%, #fffdf6 0%, #e7e0d1 42%, #aaa293 100%);
+  box-shadow: 0 1.5px 2px rgba(0, 0, 0, 0.5), inset 0 -1px 1px rgba(0, 0, 0, 0.18);
+}
+
+.stone.piedra {
+  margin: calc(var(--ps) / -2) 0 0 calc(var(--ps) / -2);
+}
+
+.amarraco {
+  width: var(--aw);
+  height: var(--ah);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2a170b, #8c5a32 42%, #b27a47 55%, #4a2c15);
+  box-shadow: 0 2px 3px rgba(0, 0, 0, 0.55), inset 0 0 0 0.5px rgba(255, 220, 170, 0.25);
+}
+
+.stone.amarraco {
+  margin: calc(var(--ah) / -2) 0 0 calc(var(--aw) / -2);
+}
+
+.stone-flash {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 18px rgba(242, 193, 78, 0.7);
+}
+
+/* ---------- Mazo del que reparte ---------- */
+
+.deckzone {
+  position: absolute;
+  z-index: 3;
+  width: var(--mini-w);
+  aspect-ratio: 207 / 318;
+  translate: -50% -50%;
+  pointer-events: none;
+  opacity: 0;
+  scale: 0.6;
+  transition:
+    left 0.8s cubic-bezier(0.65, 0, 0.35, 1),
+    top 0.8s cubic-bezier(0.65, 0, 0.35, 1),
+    opacity 0.4s,
+    scale 0.5s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+.deckzone.on {
+  opacity: 1;
+  scale: 1;
+}
+
+.deckzone[data-seat='0'] {
+  left: 80%;
+  top: 72%;
+}
+
+.deckzone[data-seat='1'] {
+  left: 80%;
+  top: 19%;
+}
+
+.deckzone[data-seat='2'] {
+  left: 20%;
+  top: 19%;
+}
+
+.deckzone[data-seat='3'] {
+  left: 20%;
+  top: 72%;
+}
+
+.deckzone .deck,
+.deckzone .discards {
+  position: absolute;
+  inset: 0;
+}
+
+/* Los descartes, a un lado del mazo, hacia el centro de la mesa */
+.deckzone[data-seat='0'] .discards {
+  translate: -70% -105%;
+}
+
+.deckzone[data-seat='1'] .discards {
+  translate: -70% 105%;
+}
+
+.deckzone[data-seat='2'] .discards {
+  translate: 70% 105%;
+}
+
+.deckzone[data-seat='3'] .discards {
+  translate: 70% -105%;
+}
+
+.deckzone .card {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+}
+
+.deck .card {
+  transform: translate(calc(var(--k) * -1px), calc(var(--k) * -1.3px));
+}
+
+.deck.shuffle .card:nth-child(odd) {
+  animation: riffleL 0.7s cubic-bezier(0.45, 0, 0.3, 1);
+}
+
+.deck.shuffle .card:nth-child(even) {
+  animation: riffleR 0.7s cubic-bezier(0.45, 0, 0.3, 1);
+}
+
+@keyframes riffleL {
+  40% {
+    transform: translate(-62%, -6%) rotate(-12deg);
+  }
+  70% {
+    transform: translate(-18%, -3%) rotate(-4deg);
+  }
+}
+
+@keyframes riffleR {
+  40% {
+    transform: translate(62%, -6%) rotate(12deg);
+  }
+  70% {
+    transform: translate(18%, -3%) rotate(4deg);
+  }
+}
+
+.fx-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.fx-layer .card {
+  position: absolute;
+  will-change: transform;
 }
 
 /* ---------- Bocadillos ---------- */
@@ -701,7 +1070,7 @@ button {
 .center {
   position: absolute;
   left: 50%;
-  top: calc(var(--cy) - var(--mini-w) * 0.768);
+  top: calc(var(--cy) + var(--band-down, 42px));
   z-index: 1;
   translate: -50% 0;
   width: min(42vw, 420px);
@@ -711,19 +1080,6 @@ button {
   gap: 12px;
   text-align: center;
   pointer-events: none;
-}
-
-.deck {
-  position: relative;
-  width: var(--mini-w);
-  aspect-ratio: 207 / 318;
-}
-
-.deck .card {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  transform: translate(calc(var(--k) * -1px), calc(var(--k) * -1.3px));
 }
 
 .msg {
@@ -779,6 +1135,41 @@ button {
   gap: 10px;
   padding: 0 12px;
   margin-bottom: calc(var(--card-w) * 0.12);
+}
+
+.turn-timer {
+  width: min(260px, 70vw);
+  height: 4px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.turn-timer i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--gold);
+  transform-origin: left center;
+  animation: timerDown linear forwards;
+}
+
+@keyframes timerDown {
+  from {
+    transform: scaleX(1);
+  }
+  75% {
+    background: var(--gold);
+  }
+  to {
+    transform: scaleX(0);
+    background: var(--red);
+  }
+}
+
+.app.paused .turn-timer i,
+.app.paused .ring circle {
+  animation-play-state: paused;
 }
 
 .prompt {
@@ -1006,6 +1397,34 @@ button {
   translate: 0 -4%;
 }
 
+.panel {
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.panel-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.panel-actions .turn-timer {
+  width: min(220px, 60%);
+  background: rgba(17, 28, 44, 0.12);
+}
+
+.panel-actions .btn.primary {
+  color: #fff;
+  background: var(--ink);
+}
+
+.panel-actions .btn.primary:hover:not(:disabled) {
+  background: #22324a;
+}
+
 .kicker {
   display: block;
   margin-bottom: 6px;
@@ -1049,9 +1468,27 @@ button {
 }
 
 .series {
-  margin: 12px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 14px 0 0;
   font-size: 13px;
   color: #7a8596;
+}
+
+.series .sb-juegos i {
+  border-color: rgba(17, 28, 44, 0.25);
+}
+
+.series .sb-juegos.t0 i.won {
+  background: #d9a426;
+  border-color: #d9a426;
+}
+
+.series .sb-juegos.t1 i.won {
+  background: #2d5ea6;
+  border-color: #2d5ea6;
 }
 
 .summary {
@@ -1557,6 +1994,8 @@ button {
     --card-w: clamp(58px, 19vw, 92px);
     --mini-w: clamp(30px, 8.6vw, 44px);
     --cy: 47%;
+    --band-up: 60px;
+    --band-down: 46px;
   }
 
   .topbar {
@@ -1580,7 +2019,16 @@ button {
   }
 
   .sb-mid {
-    width: 64px;
+    display: none;
+  }
+
+  .sb-juegos {
+    gap: 3px;
+  }
+
+  .sb-juegos i {
+    width: 6px;
+    height: 6px;
   }
 
   .sb-goal {
@@ -1614,13 +2062,18 @@ button {
     inset: 10px;
   }
 
-  .print {
-    width: 62vw;
+  .lances {
+    gap: 4px;
+    letter-spacing: 0.1em;
   }
 
-  .lances {
-    gap: 12px;
-    letter-spacing: 0.12em;
+  .lance {
+    min-width: 0;
+    width: 22vw;
+  }
+
+  .lance .st {
+    font-size: 9.5px;
   }
 
   .role {
@@ -1660,7 +2113,44 @@ button {
   }
 
   .center {
-    width: 56vw;
+    width: 52vw;
+  }
+
+  .deckzone[data-seat='0'] {
+    left: 89%;
+    top: 93%;
+  }
+
+  .deckzone[data-seat='1'] {
+    left: 89%;
+    top: 11%;
+  }
+
+  .deckzone[data-seat='2'] {
+    left: 11%;
+    top: 11%;
+  }
+
+  .deckzone[data-seat='3'] {
+    left: 11%;
+    top: 93%;
+  }
+
+  /* En móvil los descartes van pegados al mazo, hacia dentro */
+  .deckzone[data-seat='1'] .discards {
+    translate: -42% 6%;
+  }
+
+  .deckzone[data-seat='2'] .discards {
+    translate: 42% 6%;
+  }
+
+  .deckzone[data-seat='0'] .discards {
+    translate: -42% -14%;
+  }
+
+  .deckzone[data-seat='3'] .discards {
+    translate: 42% -14%;
   }
 
   .handinfo {

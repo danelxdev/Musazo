@@ -1,6 +1,6 @@
 # Reglas del mus
 
-El mus es el juego de cartas más popular de España. Se juega **por parejas**, con la **baraja española de 40 cartas**, y gana quien antes llega a **40 tantos**. Aquí tienes todo lo que necesitas para jugar en Musazo, siguiendo el reglamento tradicional.
+El mus es el juego de cartas más popular de España. Se juega **por parejas**, con la **baraja española de 40 cartas**, y cada juego lo gana quien antes llega a **40 tantos**. La partida es **al mejor de 3 juegos**. Aquí tienes todo lo que necesitas para jugar en Musazo, siguiendo el reglamento tradicional.
 
 ::cards 12-oros 11-copas 10-espadas 1-bastos | Rey, caballo, sota y as: las cartas que más se ven en el mus
 
@@ -151,9 +151,11 @@ Los tantos que se cobran por un **no quiero** se apuntan en el acto, sin esperar
 
 ## Tantos, amarracos y partida
 
-- La partida es **a 40 tantos**.
-- Tradicionalmente los tantos se cuentan con **piedras** o **amarracos**: cada amarraco vale **5 tantos**. En el marcador de Musazo los verás como barras.
-- En muchas mesas se juega a **vacas**: la vaca se la lleva la primera pareja que gana varias partidas (normalmente 3).
+- Cada **juego** es a **40 tantos**, y la **partida** se juega **al mejor de 3 juegos**: la gana la primera pareja que se lleva **2 juegos**.
+- Los tantos se cuentan con **piedras** (1 tanto) y **amarracos** (5 tantos). En el centro del tapete está el **montón**: cada vez que una pareja gana tantos, coge piedras y las pone en su lado. Al juntar **cinco piedras**, las devuelve al montón y coge **un amarraco**, que va al otro lado de su zona.
+- El mazo está siempre **delante del que reparte**, a la izquierda de la mano. Él da las cartas al empezar y también las del mus.
+- En muchas mesas se juega además a **vacas**: la vaca se la lleva la primera pareja que gana varias partidas.
+- En Musazo cada jugador tiene **20 segundos** para hablar. Si se acaba el tiempo se juega lo más prudente: *no hay mus*, *paso* o *no quiero*.
 
 ## Las señas
 

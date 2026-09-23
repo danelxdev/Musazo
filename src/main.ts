@@ -12,12 +12,32 @@ const engine = new Engine({
   onChange: (s) => ui.render(s),
   ask: (req, s) => ui.ask(req, s),
   sound: play,
+  cancel: () => ui.cancel(),
 });
 
-// La partida se detiene mientras se leen las reglas
+// La partida se detiene mientras se leen las reglas o se confirma el reinicio
+let rulesOpen = false;
+let confirmOpen = false;
+const syncPause = () => {
+  const p = rulesOpen || confirmOpen;
+  timing.paused = p;
+  ui.setPaused(p);
+};
 ui.onRules = () => rules.open();
 rules.onToggle = (open) => {
-  timing.paused = open;
+  rulesOpen = open;
+  syncPause();
+};
+ui.onConfirmToggle = (open) => {
+  confirmOpen = open;
+  syncPause();
+};
+ui.onRestart = () => {
+  if (!started) return;
+  confirmOpen = false;
+  ui.setPaused(false);
+  engine.restart();
+  syncPause();
 };
 
 let started = false;

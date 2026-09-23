@@ -2,7 +2,9 @@
 
 Juego de mus en el navegador: un tapete de fieltro, la baraja española de siempre y partidas de 4 jugadores (tú y tu compañera contra dos rivales controlados por la máquina).
 
-- Mus a 8 reyes, a 40 tantos: mus y descartes, Grande, Chica, Pares, Juego/Punto, envites, órdagos y deje.
+- Mus a 8 reyes, al mejor de 3 juegos de 40 tantos: mus y descartes, Grande, Chica, Pares, Juego/Punto, envites, órdagos y deje.
+- Piedras y amarracos sobre el tapete, y el mazo delante del que reparte, como en una mesa de verdad.
+- 20 segundos por turno, resumen de cada lance en pantalla y botón para reiniciar la partida.
 - Reglas completas con ejemplos animados (botón **Reglas**, arriba a la derecha).
 - Sin menús: entras, pulsas **Jugar** y a jugar.
 

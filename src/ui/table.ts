@@ -1,18 +1,34 @@
 import type { Card } from '../game/cards';
 import { LANCE_NAMES, describeJuego, describePares } from '../game/evaluate';
 import {
-  type Action, type Request, type State, HUMAN, SEAT_NAMES, TEAM_NAMES, WIN_POINTS, teamOf,
+  type Action, type Request, type State, HUMAN, Restart, JUEGOS_TO_WIN, SEAT_NAMES, TEAM_NAMES, WIN_POINTS, teamOf,
 } from '../game/engine';
+import type { Lance } from '../game/evaluate';
+import * as ai from '../game/ai';
 import { backHtml, faceHtml } from './cards';
-import { isMuted, toggleMute } from './sound';
+import { DEAL_MS, DeckFx } from './deckfx';
+import { Stones } from './stones';
+import { isMuted, play, toggleMute } from './sound';
 
 const BASE = import.meta.env.BASE_URL;
-const DEAL_MS = 460;
 const FLIP_MS = 700;
+/** Tiempo de cada jugador para decidir. */
+export const TURN_MS = 20000;
+/** Tiempo para pasar a la siguiente mano o juego. */
+const CONTINUE_MS = 15000;
+
+interface TurnTimer {
+  total: number;
+  start: number;
+  deadline: number;
+  remaining: number;
+  handles: number[];
+}
 
 const ICON = {
   book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
   sound: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
+  restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   muted: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
 };
 
@@ -22,13 +38,13 @@ const LAYOUT = `
     <img class="brand" src="${BASE}logo-light.png" alt="musazo" width="1400" height="218">
     <div class="scoreboard" data-region="score"></div>
     <div class="top-actions">
+      <button class="pill-btn restart-btn" data-action="restart" aria-label="Reiniciar partida">${ICON.restart}<span>Reiniciar</span></button>
       <button class="pill-btn" data-action="rules" aria-label="Reglas del mus">${ICON.book}<span>Reglas</span></button>
       <button class="icon-btn" data-action="mute" aria-label="Sonido"></button>
     </div>
   </header>
   <main class="stage">
     <div class="mat">
-      <div class="print" aria-hidden="true"><img src="${BASE}logo-light.png" alt=""></div>
       <div class="lances" data-region="lances"></div>
       <div class="seat s2" data-region="seat2"></div>
       <div class="seat s1" data-region="seat1"></div>
@@ -41,11 +57,23 @@ const LAYOUT = `
       <div class="overlay" data-region="overlay"></div>
     </div>
   </main>
+  <div class="confirm" hidden>
+    <div class="confirm-scrim" data-action="restart-cancel"></div>
+    <div class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-text">
+      <h3 id="confirm-title">¿Reiniciar la partida?</h3>
+      <p id="confirm-text">Se perderán los tantos y los juegos de la partida actual y empezaréis de cero.</p>
+      <div class="confirm-actions">
+        <button class="btn quiet" data-action="restart-cancel">Cancelar</button>
+        <button class="btn danger" data-action="restart-confirm">Reiniciar</button>
+      </div>
+    </div>
+  </div>
 </div>`;
 
 interface Pending {
   req: Request;
   resolve: (a: Action) => void;
+  reject: (e: Error) => void;
 }
 
 export class TableUI {
@@ -58,13 +86,28 @@ export class TableUI {
   private amount = 2;
   private handNo = -1;
   private state: State | null = null;
+  private deckFx: DeckFx;
+  private stones: Stones;
+  private timer: TurnTimer | null = null;
+  private paused = false;
+  private turnKey = '';
+  private turnStart = 0;
   onStart: (() => void) | null = null;
   onRules: (() => void) | null = null;
+  onRestart: (() => void) | null = null;
+  /** Avisa cuando se abre o cierra el diálogo de confirmación (para pausar la partida). */
+  onConfirmToggle: ((open: boolean) => void) | null = null;
 
   constructor(private root: HTMLElement) {
     root.innerHTML = LAYOUT;
     root.querySelectorAll<HTMLElement>('[data-region]').forEach((el) => this.regions.set(el.dataset.region!, el));
+    const mat = root.querySelector<HTMLElement>('.mat')!;
+    this.stones = new Stones(mat);
+    this.deckFx = new DeckFx(mat);
     root.addEventListener('click', (e) => this.onClick(e));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.confirmOpen) this.closeConfirm();
+    });
     this.renderMute();
   }
 
@@ -90,6 +133,19 @@ export class TableUI {
     if (act === 'mute') {
       toggleMute();
       this.renderMute();
+      return;
+    }
+    if (act === 'restart') {
+      this.openConfirm();
+      return;
+    }
+    if (act === 'restart-cancel') {
+      this.closeConfirm();
+      return;
+    }
+    if (act === 'restart-confirm') {
+      this.closeConfirm();
+      this.onRestart?.();
       return;
     }
     if (act === 'rules') {
@@ -122,20 +178,150 @@ export class TableUI {
       case 'continue': action = { kind: 'continue' }; break;
     }
     if (!action) return;
+    this.resolvePending(action);
+  }
+
+  private resolvePending(action: Action) {
+    if (!this.pending) return;
     const { resolve } = this.pending;
     this.pending = null;
     this.selected.clear();
+    this.stopTimer();
     resolve(action);
     this.rerender();
   }
 
+  // ---------- Reiniciar ----------
+
+  private get confirmOpen() {
+    return !this.root.querySelector<HTMLElement>('.confirm')!.hidden;
+  }
+
+  private openConfirm() {
+    const el = this.root.querySelector<HTMLElement>('.confirm')!;
+    el.hidden = false;
+    requestAnimationFrame(() => el.classList.add('open'));
+    el.querySelector<HTMLButtonElement>('[data-action="restart-cancel"].btn')?.focus();
+    this.onConfirmToggle?.(true);
+  }
+
+  private closeConfirm() {
+    const el = this.root.querySelector<HTMLElement>('.confirm')!;
+    if (el.hidden) return;
+    el.classList.remove('open');
+    el.hidden = true;
+    this.onConfirmToggle?.(false);
+  }
+
+  /** Descarta la decisión pendiente: la partida se ha reiniciado. */
+  cancel() {
+    const p = this.pending;
+    this.pending = null;
+    this.selected.clear();
+    this.stopTimer();
+    p?.reject(new Restart());
+    this.rerender();
+  }
+
   ask(req: Request, state: State): Promise<Action> {
-    return new Promise((resolve) => {
-      this.pending = { req, resolve };
+    return new Promise((resolve, reject) => {
+      this.pending = { req, resolve, reject };
       this.amount = 2;
       this.selected.clear();
+      const ms = req.type === 'continue' ? (req.label === 'Nueva partida' ? 0 : CONTINUE_MS) : TURN_MS;
+      if (ms) this.startTimer(ms);
       this.render(state);
     });
+  }
+
+  // ---------- Temporizador de turno ----------
+
+  private startTimer(ms: number) {
+    this.stopTimer();
+    const now = performance.now();
+    this.timer = { total: ms, start: now, deadline: now + ms, remaining: ms, handles: [] };
+    if (!this.paused) this.arm();
+  }
+
+  private arm() {
+    const tm = this.timer;
+    if (!tm) return;
+    const left = tm.deadline - performance.now();
+    tm.handles.push(window.setTimeout(() => this.onTimeout(), Math.max(0, left)));
+    // Avisos sonoros en los últimos 5 segundos (solo cuando decides tú)
+    if (this.pending?.req.type !== 'continue') {
+      for (let k = 1; k <= 5; k++) {
+        const at = left - k * 1000;
+        if (at > 0) tm.handles.push(window.setTimeout(() => play('tick'), at));
+      }
+    }
+  }
+
+  private stopTimer() {
+    this.timer?.handles.forEach((h) => window.clearTimeout(h));
+    this.timer = null;
+  }
+
+  /** Pausa (por ejemplo, mientras se leen las reglas). */
+  setPaused(p: boolean) {
+    if (p === this.paused) return;
+    this.paused = p;
+    this.root.querySelector('.app')!.classList.toggle('paused', p);
+    const tm = this.timer;
+    if (!tm) return;
+    const now = performance.now();
+    if (p) {
+      tm.remaining = tm.deadline - now;
+      tm.handles.forEach((h) => window.clearTimeout(h));
+      tm.handles = [];
+    } else {
+      tm.deadline = now + tm.remaining;
+      tm.start = tm.deadline - tm.total;
+      this.arm();
+      this.syncTimers();
+    }
+  }
+
+  /** Se acabó el tiempo: se juega la opción más prudente. */
+  private onTimeout() {
+    if (!this.pending || !this.state) return;
+    const req = this.pending.req;
+    let action: Action;
+    switch (req.type) {
+      case 'mus':
+        action = { kind: 'corto' };
+        break;
+      case 'discard':
+        action = this.selected.size ? { kind: 'discard', ids: [...this.selected] } : ai.decide(this.state, HUMAN, req);
+        break;
+      case 'open':
+        action = { kind: 'paso' };
+        break;
+      case 'respond':
+        action = { kind: 'noquiero' };
+        break;
+      default:
+        action = { kind: 'continue' };
+    }
+    this.resolvePending(action);
+  }
+
+  /** Ajusta las animaciones de los relojes al tiempo real restante. */
+  private syncTimers() {
+    const now = performance.now();
+    const tm = this.timer;
+    const elapsedOf = (x: TurnTimer) => (this.paused ? x.total - x.remaining : now - x.start);
+    const bar = this.root.querySelector<HTMLElement>('.turn-timer i');
+    if (bar && tm) {
+      bar.style.animationDuration = `${tm.total}ms`;
+      bar.style.animationDelay = `${-elapsedOf(tm)}ms`;
+    }
+    const ring = this.root.querySelector<SVGElement>('.plate .ring circle');
+    if (ring) {
+      const human = this.state?.turn === HUMAN && tm ? tm : null;
+      ring.style.animationDuration = `${human ? human.total : TURN_MS}ms`;
+      ring.style.animationDelay = `${-(human ? elapsedOf(human) : now - this.turnStart)}ms`;
+    }
   }
 
   private rerender() {
@@ -156,30 +342,43 @@ export class TableUI {
     }
     if (state.reveal && !this.revealAt) this.revealAt = performance.now();
     if (!state.reveal) this.revealAt = 0;
+    const key = `${state.turn}|${state.phase}|${state.lance}|${state.bet?.amount}|${state.bet?.team}|${this.pending?.req.type ?? ''}`;
+    if (key !== this.turnKey) {
+      this.turnKey = key;
+      this.turnStart = performance.now();
+    }
     const app = this.root.querySelector('.app')!;
     app.classList.toggle('playing', state.phase !== 'intro');
     app.classList.toggle('reveal', state.reveal);
 
+    const prev = this.deckFx.snapshot(this.root);
     this.set('score', this.renderScore(state));
     this.set('lances', this.renderLances(state));
     for (let seat = 0; seat < 4; seat++) this.set(`seat${seat}`, this.renderSeat(state, seat));
     this.set('center', this.renderCenter(state));
     this.set('controls', this.renderControls(state));
     this.set('overlay', this.renderOverlay(state));
+
+    this.deckFx.afterRender(state, prev, this.root);
+    this.syncTimers();
+    this.stones.visible = state.phase !== 'intro';
+    if (state.phase !== 'intro') this.stones.setScores(state.scores);
   }
 
   private renderScore(s: State) {
     if (s.phase === 'intro') return '';
     const pct = (t: 0 | 1) => Math.min(100, (s.scores[t] / WIN_POINTS) * 100);
     const gain = (t: 0 | 1) => (s.lastGain[t] ? `<em class="sb-gain">+${s.lastGain[t]}</em>` : '');
-    const games = (t: 0 | 1) => (s.games[t] ? `<span class="sb-games" title="Partidas ganadas">${s.games[t]}</span>` : '');
+    const games = (t: 0 | 1) =>
+      `<span class="sb-juegos" title="Juegos ganados: ${s.games[t]} de ${JUEGOS_TO_WIN}">${Array.from({ length: JUEGOS_TO_WIN }, (_, i) => `<i class="${i < s.games[t] ? 'won' : ''}"></i>`).join('')}</span>`;
+    const juego = s.games[0] + s.games[1] + (s.phase === 'gameover' ? 0 : 1);
     return `
-      <div class="sb-team t0"><span class="sb-name">${TEAM_NAMES[0]}${games(0)}</span><span class="sb-pts">${s.scores[0]}${gain(0)}</span></div>
+      <div class="sb-team t0"><span class="sb-name">${TEAM_NAMES[0]}</span>${games(0)}<span class="sb-pts">${s.scores[0]}${gain(0)}</span></div>
       <div class="sb-mid" aria-hidden="true">
         <div class="sb-track"><i class="t0" style="width:${pct(0) / 2}%"></i><i class="t1" style="width:${pct(1) / 2}%"></i></div>
-        <span class="sb-goal">a ${WIN_POINTS}</span>
+        <span class="sb-goal">Juego ${juego} · a ${WIN_POINTS}</span>
       </div>
-      <div class="sb-team t1"><span class="sb-pts">${s.scores[1]}${gain(1)}</span><span class="sb-name">${TEAM_NAMES[1]}${games(1)}</span></div>`;
+      <div class="sb-team t1"><span class="sb-pts">${s.scores[1]}${gain(1)}</span>${games(1)}<span class="sb-name">${TEAM_NAMES[1]}</span></div>`;
   }
 
   private renderLances(s: State) {
@@ -190,9 +389,41 @@ export class TableUI {
       .map((l) => {
         const done = s.records.some((r) => r.lance === l || (l === 'juego' && r.lance === 'punto'));
         const label = l === 'juego' && punto ? 'Punto' : LANCE_NAMES[l];
-        return `<span class="lance ${current === l ? 'on' : ''} ${done ? 'done' : ''}">${label}</span>`;
+        const st = this.lanceStatus(s, l);
+        return `<div class="lance ${current === l ? 'on' : ''} ${done ? 'done' : ''}"><b>${label}</b><small class="st ${st.cls}">${st.text || '&nbsp;'}</small></div>`;
       })
       .join('');
+  }
+
+  /** Qué ha pasado en cada lance: en paso, querido, no querido, órdago… */
+  private lanceStatus(s: State, l: Lance): { text: string; cls: string } {
+    const rec = s.records.find((r) => r.lance === l || (l === 'juego' && r.lance === 'punto'));
+    const short = (t: number) => (t === 0 ? 'Nos.' : 'Ellos');
+    if (rec) {
+      switch (rec.status) {
+        case 'paso':
+          return { text: 'En paso', cls: 'muted' };
+        case 'querido':
+          return { text: `${rec.amount} querido${rec.amount === 1 ? '' : 's'}`, cls: 'gold' };
+        case 'noquerido':
+          return { text: `No quiero · +${rec.amount} ${short(rec.betTeam!)}`, cls: `t${rec.betTeam}` };
+        case 'sinjugada': {
+          const team = teamOf(rec.participants[0]);
+          return { text: `Solo ${team === 0 ? 'nosotros' : 'ellos'}`, cls: `t${team}` };
+        }
+        case 'nadie':
+          return { text: 'Nadie', cls: 'muted' };
+        case 'ordago':
+          return { text: 'Órdago querido', cls: 'red' };
+      }
+    }
+    const current = s.lance === 'punto' ? 'juego' : s.lance;
+    if (current === l && s.phase === 'lance') {
+      if (s.bet?.ordago) return { text: `Órdago · ${short(s.bet.team)}`, cls: 'red' };
+      if (s.bet) return { text: `Envite ${s.bet.amount} · ${short(s.bet.team)}`, cls: `t${s.bet.team}` };
+      return { text: 'Hablando…', cls: 'muted' };
+    }
+    return { text: '', cls: '' };
   }
 
   private cardHtml(s: State, seat: number, card: Card, faceUp: boolean, i: number) {
@@ -207,8 +438,7 @@ export class TableUI {
     const classes: string[] = [];
     let style = `--i:${i}`;
     if (age < DEAL_MS) {
-      classes.push('dealt');
-      style += `;animation-delay:${-age}ms`;
+      // La animación de reparto (desde el mazo) la hace DeckFx
     } else if (faceUp && seat !== HUMAN && this.revealAt && now - this.revealAt < FLIP_MS + i * 70) {
       classes.push('flip');
       style += `;animation-delay:${-(now - this.revealAt) + i * 70}ms`;
@@ -216,7 +446,8 @@ export class TableUI {
     if (seat === HUMAN && this.pending?.req.type === 'discard') classes.push('selectable');
     if (seat === HUMAN && this.selected.has(card.id)) classes.push('selected');
     const html = faceUp ? faceHtml(card.id, classes.join(' '), style) : backHtml(classes.join(' '), style);
-    return html.replace('<div class="card', `<div data-id="${card.id}" class="card`);
+    const born = age < DEAL_MS ? ` data-born="${Math.round(t)}"` : '';
+    return html.replace('<div class="card', `<div data-id="${card.id}"${born} class="card`);
   }
 
   private renderSeat(s: State, seat: number) {
@@ -233,7 +464,7 @@ export class TableUI {
       ? `<div class="handinfo">${describePares(s.hands[seat])} · ${describeJuego(s.hands[seat])}</div>` : '';
     return `
       <div class="plate team${teamOf(seat)} ${isTurn ? 'turn' : ''}">
-        <span class="avatar">${name[0]}</span><span class="pname">${name}</span>${role ? `<span class="role">${role}</span>` : ''}${mano}
+        <span class="avatar">${name[0]}${isTurn ? '<svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16"/></svg>' : ''}</span><span class="pname">${name}</span>${role ? `<span class="role">${role}</span>` : ''}${mano}
       </div>
       <div class="hand ${seat === HUMAN ? 'mine' : 'mini'}">${hand}</div>
       ${info}
@@ -242,12 +473,8 @@ export class TableUI {
 
   private renderCenter(s: State) {
     if (s.phase === 'intro') return '';
-    const pile = Math.min(6, Math.ceil(s.deck.length / 6));
-    const deck = s.deck.length && !s.reveal
-      ? `<div class="deck">${Array.from({ length: pile }, (_, i) => backHtml('', `--k:${i}`)).join('')}</div>`
-      : '';
     // Si te toca decidir, los botones ya explican el lance y la apuesta
-    if (this.pending && this.pending.req.type !== 'continue') return deck;
+    if (this.pending && this.pending.req.type !== 'continue') return '';
     let bet = '';
     if (s.bet && s.phase === 'lance') {
       bet = s.bet.ordago
@@ -255,7 +482,7 @@ export class TableUI {
         : `<div class="bet"><b>${s.bet.amount}</b> <small>envite · ${TEAM_NAMES[s.bet.team]}</small></div>`;
     }
     const msg = s.message ? `<div class="msg">${s.message}</div>` : '';
-    return `${deck}${msg}${bet}`;
+    return `${msg}${bet}`;
   }
 
   private renderControls(s: State) {
@@ -267,6 +494,7 @@ export class TableUI {
       return '';
     }
     const btn = (action: string, label: string, cls = '') => `<button class="btn ${cls}" data-action="${action}">${label}</button>`;
+    const bar = this.timer ? '<div class="turn-timer" aria-hidden="true"><i></i></div>' : '';
     const stepper = (label: string) => `<div class="stepper">
         <button class="btn step" data-action="dec" aria-label="Menos" ${this.amount <= 2 ? 'disabled' : ''}>−</button>
         ${btn('envido', `${label} <b>${this.amount}</b>`, 'gold')}
@@ -274,24 +502,25 @@ export class TableUI {
       </div>`;
     switch (p.req.type) {
       case 'mus':
-        return `<div class="prompt">¿Pides mus?</div><div class="row">${btn('mus', 'Mus', 'primary')}${btn('corto', 'No hay mus')}</div>`;
+        return `${bar}<div class="prompt">¿Pides mus?</div><div class="row">${btn('mus', 'Mus', 'primary')}${btn('corto', 'No hay mus')}</div>`;
       case 'discard': {
         const n = this.selected.size;
-        return `<div class="prompt">Toca las cartas que quieres cambiar</div>
+        return `${bar}<div class="prompt">Toca las cartas que quieres cambiar</div>
           <div class="row"><button class="btn primary" data-action="discard" ${n ? '' : 'disabled'}>Descartar${n ? ` ${n}` : ''}</button></div>`;
       }
       case 'open':
-        return `<div class="prompt"><b>${LANCE_NAMES[p.req.lance]}</b> · te toca hablar</div>
+        return `${bar}<div class="prompt"><b>${LANCE_NAMES[p.req.lance]}</b> · te toca hablar</div>
           <div class="row">${btn('paso', 'Paso')}${stepper('Envido')}${btn('ordago', 'Órdago', 'danger')}</div>`;
       case 'respond': {
         const bet = p.req.bet;
         const what = bet.ordago ? '¡órdago!' : `envite de ${bet.amount}`;
         const extra = bet.ordago ? '' : `${stepper('Subo')}${btn('ordago', 'Órdago', 'danger')}`;
-        return `<div class="prompt"><b>${LANCE_NAMES[p.req.lance]}</b> · ${TEAM_NAMES[bet.team]}: ${what}</div>
+        return `${bar}<div class="prompt"><b>${LANCE_NAMES[p.req.lance]}</b> · ${TEAM_NAMES[bet.team]}: ${what}</div>
           <div class="row">${btn('noquiero', 'No quiero')}${btn('quiero', 'Quiero', 'primary')}${extra}</div>`;
       }
       case 'continue':
-        return `<div class="row">${btn('continue', p.req.label, 'primary big')}</div>`;
+        // El botón va dentro del panel de recuento / resultado para que no quede tapado
+        return '';
     }
   }
 
@@ -301,25 +530,46 @@ export class TableUI {
       return `<div class="intro">
         <div class="fan">${fan.map((id, i) => faceHtml(id, '', `--f:${i - 2}`)).join('')}</div>
         <img class="intro-logo" src="${BASE}logo-light.png" alt="musazo" width="1400" height="218">
-        <p class="tag">Mus a 8 reyes · tú y Maite contra Iñaki y Koldo</p>
+        <p class="tag">Mus a 8 reyes · al mejor de 3 juegos · tú y Maite contra Iñaki y Koldo</p>
         <button class="btn primary big play" data-action="start">Jugar</button>
         <button class="link-btn" data-action="rules">¿Primera vez? Lee las reglas</button>
       </div>`;
     }
     if (s.phase === 'gameover' && s.winner !== null) {
       const won = s.winner === 0;
+      const matchOver = s.matchWinner !== null;
+      const n = s.games[0] + s.games[1];
+      const kicker = matchOver ? (s.matchWinner === 0 ? 'Partida ganada' : 'Partida perdida') : `Juego ${n} · al mejor de 3`;
+      const title = matchOver
+        ? s.matchWinner === 0 ? '¡Habéis ganado la partida!' : 'Han ganado la partida'
+        : won ? 'Juego para vosotros' : 'Juego para ellos';
+      const dots = (t: 0 | 1) =>
+        Array.from({ length: JUEGOS_TO_WIN }, (_, i) => `<i class="${i < s.games[t] ? 'won' : ''}"></i>`).join('');
       return `<div class="panel end ${won ? 'won' : 'lost'}">
-        <span class="kicker">${won ? 'Victoria' : 'Derrota'}</span>
-        <h2>${won ? '¡Habéis ganado!' : 'Han ganado ellos'}</h2>
+        <span class="kicker">${kicker}</span>
+        <h2>${title}</h2>
         <p class="final"><span class="t0">${s.scores[0]}</span><i>–</i><span class="t1">${s.scores[1]}</span></p>
         ${this.summaryHtml(s)}
-        <p class="series">Partidas · Nosotros ${s.games[0]} — ${s.games[1]} Ellos</p>
+        <div class="series">
+          <span class="sb-juegos t0">${dots(0)}</span>
+          <span>Juegos · Nosotros ${s.games[0]} — ${s.games[1]} Ellos</span>
+          <span class="sb-juegos t1">${dots(1)}</span>
+        </div>
+        ${this.continueHtml()}
       </div>`;
     }
     if (s.phase === 'showdown' && s.summary.length) {
-      return `<div class="panel"><span class="kicker">Recuento</span>${this.summaryHtml(s)}</div>`;
+      return `<div class="panel"><span class="kicker">Recuento</span>${this.summaryHtml(s)}${this.continueHtml()}</div>`;
     }
     return '';
+  }
+
+  /** Botón para seguir (siguiente mano / juego / partida), con su barra de tiempo. */
+  private continueHtml() {
+    const p = this.pending;
+    if (p?.req.type !== 'continue') return '';
+    const bar = this.timer ? '<div class="turn-timer" aria-hidden="true"><i></i></div>' : '';
+    return `<div class="panel-actions">${bar}<button class="btn primary big" data-action="continue">${p.req.label}</button></div>`;
   }
 
   private summaryHtml(s: State) {

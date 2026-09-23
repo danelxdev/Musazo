@@ -10,6 +10,16 @@ export const TEAM_NAMES = ['Nosotros', 'Ellos'] as const;
 export const SEAT_NAMES = ['Tú', 'Iñaki', 'Maite', 'Koldo'] as const;
 export const HUMAN = 0;
 export const WIN_POINTS = 40;
+/** La partida es al mejor de 3 juegos: gana quien se lleva 2. */
+export const JUEGOS_TO_WIN = 2;
+
+/** Reparte el que está a la izquierda de la mano (el postre). */
+export const dealerOf = (mano: number) => (mano + 3) % 4;
+function dealMessage(mano: number) {
+  const d = dealerOf(mano);
+  if (d === HUMAN) return `Repartes tú · es mano ${SEAT_NAMES[mano]}`;
+  return `Reparte ${SEAT_NAMES[d]} · ${mano === HUMAN ? 'eres mano' : `es mano ${SEAT_NAMES[mano]}`}`;
+}
 
 export type Phase = 'intro' | 'deal' | 'mus' | 'discard' | 'lance' | 'showdown' | 'gameover';
 
@@ -80,25 +90,34 @@ export interface State {
   message: string;
   summary: SummaryLine[];
   winner: Team | null;
+  /** Pareja que ha ganado la partida (al mejor de 3 juegos), si ya ha terminado. */
+  matchWinner: Team | null;
   /** Puntos apuntados en esta mano (para el marcador animado). */
   lastGain: [number, number];
 }
 
 class GameEnd extends Error {}
 
+/** Se lanza para cortar la partida en curso cuando el jugador la reinicia. */
+export class Restart extends Error {}
+
 /** Escala de tiempos (0 en simulaciones). */
-export const timing = { scale: 1, paused: false };
+export const timing = { scale: 1, paused: false, epoch: 0 };
 
 async function sleep(ms: number) {
+  const epoch = timing.epoch;
   await new Promise((r) => setTimeout(r, ms * timing.scale));
   // Pausa mientras se leen las reglas
-  while (timing.paused) await new Promise((r) => setTimeout(r, 150));
+  while (timing.paused && timing.epoch === epoch) await new Promise((r) => setTimeout(r, 150));
+  if (timing.epoch !== epoch) throw new Restart();
 }
 
 export interface EngineIO {
   onChange(state: State): void;
   ask(req: Request, state: State): Promise<Action>;
   sound(name: 'deal' | 'chip' | 'call' | 'win' | 'ordago'): void;
+  /** Cancela la decisión pendiente del jugador (al reiniciar). */
+  cancel?(): void;
 }
 
 export class Engine {
@@ -125,6 +144,7 @@ export class Engine {
       message: '',
       summary: [],
       winner: null,
+      matchWinner: null,
       lastGain: [0, 0],
     };
   }
@@ -149,24 +169,69 @@ export class Engine {
 
   async run() {
     for (;;) {
-      this.state.scores = [0, 0];
-      this.state.winner = null;
       try {
-        for (;;) {
-          await this.playHand();
-          this.state.mano = (this.state.mano + 1) % 4;
-        }
+        await this.playMatch();
       } catch (e) {
-        if (!(e instanceof GameEnd)) throw e;
+        if (!(e instanceof Restart)) throw e;
+        this.resetMatch();
       }
-      const w = this.state.winner!;
-      this.state.games[w]++;
-      this.state.phase = 'gameover';
-      this.state.turn = null;
-      this.io.sound('win');
-      this.emit();
-      await this.io.ask({ type: 'continue', label: 'Otra partida' }, this.state);
-      this.state.mano = (this.state.mano + 1) % 4;
+    }
+  }
+
+  /** Corta la partida en curso y empieza una nueva de cero. */
+  restart() {
+    timing.epoch++;
+    timing.paused = false;
+    this.io.cancel?.();
+  }
+
+  private resetMatch() {
+    const s = this.state;
+    s.scores = [0, 0];
+    s.games = [0, 0];
+    s.winner = null;
+    s.matchWinner = null;
+    s.lastGain = [0, 0];
+    s.records = [];
+    s.summary = [];
+    s.bubbles = [null, null, null, null];
+    s.bet = null;
+    s.lance = null;
+    s.turn = null;
+    s.reveal = false;
+    s.mano = Math.floor(Math.random() * 4);
+    s.message = 'Nueva partida';
+    this.emit();
+  }
+
+  /** Una partida: al mejor de 3 juegos de 40 tantos. */
+  private async playMatch() {
+    {
+      this.state.games = [0, 0];
+      this.state.matchWinner = null;
+      for (;;) {
+        this.state.scores = [0, 0];
+        this.state.winner = null;
+        try {
+          for (;;) {
+            await this.playHand();
+            this.state.mano = (this.state.mano + 1) % 4;
+          }
+        } catch (e) {
+          if (!(e instanceof GameEnd)) throw e;
+        }
+        const w = this.state.winner!;
+        this.state.games[w]++;
+        const matchOver = this.state.games[w] >= JUEGOS_TO_WIN;
+        if (matchOver) this.state.matchWinner = w;
+        this.state.phase = 'gameover';
+        this.state.turn = null;
+        this.io.sound('win');
+        this.emit();
+        await this.io.ask({ type: 'continue', label: matchOver ? 'Nueva partida' : 'Siguiente juego' }, this.state);
+        this.state.mano = (this.state.mano + 1) % 4;
+        if (matchOver) break;
+      }
     }
   }
 
@@ -174,7 +239,6 @@ export class Engine {
     const s = this.state;
     s.scores[team] = Math.min(WIN_POINTS, s.scores[team] + n);
     s.lastGain[team] += n;
-    this.io.sound('chip');
     this.emit();
     if (s.scores[team] >= WIN_POINTS) {
       s.winner = team;
@@ -211,9 +275,10 @@ export class Engine {
     s.lastGain = [0, 0];
     s.declared = { pares: [null, null, null, null], juego: [null, null, null, null] };
     s.bubbles = [null, null, null, null];
-    s.message = s.mano === HUMAN ? 'Eres mano' : `Es mano ${SEAT_NAMES[s.mano]}`;
+    s.message = dealMessage(s.mano);
     this.emit();
-    await sleep(500);
+    // Tiempo para recoger las cartas, llevar el mazo al que reparte y barajar
+    await sleep(s.handNo === 1 ? 1100 : 1950);
 
     for (let round = 0; round < 4; round++) {
       for (const seat of seatOrder(s.mano)) {
@@ -271,6 +336,9 @@ export class Engine {
       }
       s.turn = null;
       await sleep(300);
+      s.message = dealerOf(s.mano) === HUMAN ? 'Das cartas tú' : `Da cartas ${SEAT_NAMES[dealerOf(s.mano)]}`;
+      this.emit();
+      await sleep(350);
       const pool = roundDiscards.flat();
       for (const seat of seatOrder(s.mano)) {
         for (let i = 0; i < roundDiscards[seat].length; i++) {

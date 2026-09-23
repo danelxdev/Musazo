@@ -62,7 +62,9 @@ function tone(freq: number, start: number, duration: number, gain: number, type:
   o.stop(t + duration + 0.05);
 }
 
-export function play(name: 'deal' | 'chip' | 'call' | 'win' | 'ordago') {
+export type SoundName = 'deal' | 'chip' | 'call' | 'win' | 'ordago' | 'stone' | 'shuffle' | 'tick';
+
+export function play(name: SoundName) {
   if (muted || !ctx) return;
   switch (name) {
     case 'deal':
@@ -80,6 +82,16 @@ export function play(name: 'deal' | 'chip' | 'call' | 'win' | 'ordago') {
       tone(110, 0, 0.5, 0.35, 'sine');
       tone(82, 0.12, 0.6, 0.3, 'sine');
       noise(0.25, 300, 0.4);
+      break;
+    case 'stone':
+      tone(1900 + Math.random() * 900, 0, 0.05, 0.07, 'triangle');
+      noise(0.03, 4200, 0.22);
+      break;
+    case 'shuffle':
+      for (let i = 0; i < 9; i++) setTimeout(() => noise(0.04, 1800 + Math.random() * 1200, 0.18), i * 45);
+      break;
+    case 'tick':
+      tone(1320, 0, 0.06, 0.05, 'square');
       break;
     case 'win':
       [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.4, 0.12, 'triangle'));
