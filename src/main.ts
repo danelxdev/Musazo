@@ -79,6 +79,9 @@ ui.onExit = () => {
 ui.render(engine.state);
 preloadCards();
 
+// Para las pruebas en desarrollo
+if (import.meta.env.DEV) Object.assign(window, { __musazo: { engine, ui, timing } });
+
 // Enlace directo a la partida: /#jugar
 if (location.hash === '#jugar') ui.onStart?.();
 // Enlace directo al contador de tantos: /#contador

@@ -52,6 +52,7 @@ const LAYOUT = `
   <main class="stage">
     <div class="mat">
       <div class="lances" data-region="lances"></div>
+      <div class="band"></div>
       <div class="seat s2" data-region="seat2"></div>
       <div class="seat s1" data-region="seat1"></div>
       <div class="seat s3" data-region="seat3"></div>

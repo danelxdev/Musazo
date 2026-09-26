@@ -51,7 +51,10 @@ export class Stones {
     });
     this.layer.append(this.zoneEls[0], this.bolsaEl, this.zoneEls[1]);
     mat.appendChild(this.layer);
-    new ResizeObserver(() => this.relayout()).observe(mat);
+    const ro = new ResizeObserver(() => this.relayout());
+    ro.observe(mat);
+    const band = mat.querySelector('.band');
+    if (band) ro.observe(band);
   }
 
   set visible(v: boolean) {
@@ -76,7 +79,10 @@ export class Stones {
   private compute(): Layout {
     const W = this.mat.clientWidth;
     const H = this.mat.clientHeight;
-    const cy = (parseFloat(getComputedStyle(this.mat).getPropertyValue('--cy')) || 41) / 100;
+    // Las piedras van a la altura de la franja central del tapete (.band), que cambia según la pantalla
+    const band = this.mat.querySelector<HTMLElement>('.band');
+    const mr = this.mat.getBoundingClientRect();
+    const br = band?.getBoundingClientRect();
     const narrow = W < 1150;
     this.layer.classList.toggle('narrow', narrow);
     const bolsaR = narrow ? 26 : 38;
@@ -87,7 +93,7 @@ export class Stones {
     const w = pad * 2 + aW + inner + pW;
     const h = narrow ? 62 : 52;
     const gap = narrow ? 12 : 20;
-    const y = H * cy;
+    const y = br && mr.height ? br.top - mr.top + br.height / 2 : H * 0.41;
     const bolsa = { x: W / 2, y };
     const zones = [
       { x: W / 2 - bolsaR - gap - w, y: y - h / 2, w, h },
