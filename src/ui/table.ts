@@ -526,7 +526,8 @@ export class TableUI {
       </div>
       <div class="hand ${seat === HUMAN ? 'mine' : 'mini'}">${hand}</div>
       ${info}
-      ${bubble}`;
+      ${bubble}
+      <i class="deck-anchor" aria-hidden="true"></i>`;
   }
 
   /** «Tú» para el que mira; los demás, por su nombre. */
@@ -579,7 +580,7 @@ export class TableUI {
       case 'respond': {
         const bet = p.req.bet;
         const what = bet.ordago ? '¡órdago!' : `envite de ${bet.amount}`;
-        const extra = bet.ordago ? '' : `${stepper('Subo')}${btn('ordago', 'Órdago', 'danger')}`;
+        const extra = bet.ordago ? '' : `<i class="brk"></i>${stepper('Subo')}${btn('ordago', 'Órdago', 'danger')}`;
         return `${bar}<div class="prompt"><b>${LANCE_NAMES[p.req.lance]}</b> · ${TEAM_NAMES[bet.team]}: ${what}</div>
           <div class="row">${btn('noquiero', 'No quiero')}${btn('quiero', 'Quiero', 'primary')}${extra}</div>`;
       }

@@ -40,6 +40,32 @@ export class DeckFx {
     this.fx = document.createElement('div');
     this.fx.className = 'fx-layer';
     mat.append(this.zone, this.fx);
+    new ResizeObserver(() => this.place()).observe(mat);
+  }
+
+  /** Cambia el mazo de sitio (delante del que reparte). */
+  private setSeat(seat: string) {
+    this.zone.dataset.seat = seat;
+    this.place();
+  }
+
+  /**
+   * En el móvil cada jugador tiene un hueco reservado para el mazo (.deck-anchor), así no tapa nada:
+   * el mazo se coloca encima de ese hueco. Si el hueco no se ve (escritorio), lo coloca el CSS.
+   */
+  private place() {
+    const anchor = this.mat.querySelector<HTMLElement>(`.seat.s${this.zone.dataset.seat} .deck-anchor`);
+    const r = anchor?.getBoundingClientRect();
+    if (!anchor || !r || !r.width || !anchor.offsetParent) {
+      this.zone.style.left = '';
+      this.zone.style.top = '';
+      this.zone.classList.remove('anchored');
+      return;
+    }
+    const m = this.mat.getBoundingClientRect();
+    this.zone.style.left = `${r.left - m.left + r.width / 2}px`;
+    this.zone.style.top = `${r.top - m.top + r.height / 2}px`;
+    this.zone.classList.add('anchored');
   }
 
   /** Posición de las cartas de las manos antes de volver a pintarlas. */
@@ -61,20 +87,23 @@ export class DeckFx {
       this.lastHand = s.handNo;
       window.clearTimeout(this.moveTimer);
       if (first) {
-        this.zone.dataset.seat = dealer;
+        this.setSeat(dealer);
         window.setTimeout(() => this.shuffle(), 350);
       } else {
         // Se recogen todas las cartas al mazo, el mazo pasa al nuevo repartidor y se baraja
         this.collect(prev);
         this.moveTimer = window.setTimeout(() => {
-          this.zone.dataset.seat = dealer;
+          this.setSeat(dealer);
           window.setTimeout(() => this.shuffle(), 720);
         }, 450);
       }
     } else {
       if (this.zone.dataset.seat !== dealer) {
-        this.zone.dataset.seat = dealer;
+        this.setSeat(dealer);
         play('deal');
+      } else {
+        // Los asientos se vuelven a pintar: el hueco puede haberse movido
+        this.place();
       }
       const current = new Set(s.hands.flat().map((c) => c.id));
       let i = 0;
