@@ -95,6 +95,7 @@ export class Lobby {
   /** Elegir modalidad para jugar con amigos. */
   showModes() {
     this.screen = 'modes';
+    this.body.dataset.screen = 'modes';
     const opt = (choice: Choice, icon: string, title: string, text: string) =>
       `<button class="lb-option" data-lb="pick" data-choice="${choice}"><span class="lb-ico">${icon}</span><span><b>${title}</b><small>${text}</small></span></button>`;
     this.body.innerHTML = `
@@ -103,6 +104,7 @@ export class Lobby {
         <h2 id="lobby-title">¿Cómo quieres jugar?</h2>
       </header>
       ${this.nameField()}
+      <div class="lb-split">
       <div class="lb-group">
         <h3>Multijugador · invita a una persona</h3>
         ${opt('solo', ICON.solo, MODE_INFO.solo.title, MODE_INFO.solo.text)}
@@ -116,6 +118,7 @@ export class Lobby {
         <h3>Sin conexión</h3>
         ${opt('bots', ICON.bot, 'Contra la máquina', 'Tú y Maite contra Iñaki y Koldo')}
       </div>
+      </div>
       <form class="lb-code" data-form="join">
         <span>¿Te han pasado un código?</span>
         <input name="code" type="text" maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CÓDIGO" aria-label="Código de la sala">
@@ -127,6 +130,7 @@ export class Lobby {
   /** Sala del anfitrión: invitar y esperar a que entren. */
   showHost(lobby: LobbyInfo, me: number, status: 'connecting' | 'ready' | 'error', error = '') {
     this.screen = 'host';
+    this.body.dataset.screen = 'host';
     this.lobby = lobby;
     this.me = me;
     const guests = lobby.seats.filter((s) => s.kind === 'guest').length;
@@ -162,9 +166,13 @@ export class Lobby {
         </div>
       </header>
       <p class="lb-sub">${MODE_INFO[lobby.mode].text}.</p>
-      ${invite}
-      ${this.seatsHtml(lobby, me, custom)}
-      ${custom ? '<p class="lb-hint center">Toca dos sitios para cambiarlos: los que están enfrente juegan de pareja.</p>' : ''}
+      <div class="lb-split">
+        ${invite}
+        <div>
+          ${this.seatsHtml(lobby, me, custom)}
+          ${custom ? '<p class="lb-hint lb-center">Toca dos sitios para cambiarlos: los que están enfrente juegan de pareja.</p>' : ''}
+        </div>
+      </div>
       <div class="lb-actions">
         ${need ? `<p class="lb-status"><span class="spinner"></span>${need}</p>` : ''}
         <button class="btn primary big" data-lb="start" ${ready && (custom || guests) ? '' : 'disabled'}>${startLabel}</button>
@@ -175,6 +183,7 @@ export class Lobby {
   /** Te han invitado: nombre y entrar. */
   showJoin(code: string, error = '') {
     this.screen = 'join';
+    this.body.dataset.screen = 'join';
     this.code = code;
     this.body.innerHTML = `
       <header class="lb-head">
@@ -196,6 +205,7 @@ export class Lobby {
   /** Invitado dentro de la sala, esperando al anfitrión. */
   showWait(lobby: LobbyInfo | null, me: number, status: string) {
     this.screen = 'wait';
+    this.body.dataset.screen = 'wait';
     this.lobby = lobby;
     this.me = me;
     const host = lobby?.seats.find((s) => s.kind === 'host');
@@ -214,6 +224,7 @@ export class Lobby {
 
   showError(title: string, text: string) {
     this.screen = 'error';
+    this.body.dataset.screen = 'error';
     this.body.innerHTML = `
       <header class="lb-head">
         <button class="icon-btn" data-lb="cancel" aria-label="Volver">${ICON.back}</button>

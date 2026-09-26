@@ -136,7 +136,8 @@ export class Host {
     conn.on('data', (raw) => {
       link.lastSeen = performance.now();
       const msg = raw as GuestMsg;
-      if (msg.t === 'hello') this.hello(link, msg.name, msg.cid);
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.t === 'hello') this.hello(link, String(msg.name ?? ''), String(msg.cid ?? ''));
       else if (msg.t === 'act' && link.seat !== null) this.onAct?.(link.seat, msg.id, msg.a);
       else if (msg.t === 'bye') this.drop(link);
     });

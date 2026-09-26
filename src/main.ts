@@ -283,6 +283,8 @@ function openRoom(mode: Mode, name: string) {
         }
       }
     }
+    // Al volver, fuera los botones que pudiera tener de antes (ese turno ya lo jugó la máquina)
+    if (!away) h.sendTo(seat, { t: 'cancel' });
     const text = away ? `${name} se ha desconectado: juega la máquina hasta que vuelva` : `${name} ha vuelto a la partida`;
     notifyAll(text);
     engine.state.names[seat] = name;
