@@ -29,6 +29,7 @@ export class DeckFx {
   private lastDeckLen = 0;
   private pileN = -1;
   private moveTimer = 0;
+  private placeFrame = 0;
 
   constructor(private mat: HTMLElement) {
     this.zone = document.createElement('div');
@@ -40,7 +41,18 @@ export class DeckFx {
     this.fx = document.createElement('div');
     this.fx.className = 'fx-layer';
     mat.append(this.zone, this.fx);
-    new ResizeObserver(() => this.place()).observe(mat);
+    // El hueco del mazo se mueve cuando cambia el tamaño del tapete o de las manos
+    const ro = new ResizeObserver(() => this.place());
+    ro.observe(mat);
+    mat.querySelectorAll('.seat').forEach((seat) => ro.observe(seat));
+  }
+
+  /** Nueva partida: el mazo vuelve a empezar (se baraja al repartir la primera mano). */
+  reset() {
+    this.lastHand = 0;
+    this.lastDeckLen = 0;
+    window.clearTimeout(this.moveTimer);
+    this.discards.innerHTML = '';
   }
 
   /** Cambia el mazo de sitio (delante del que reparte). */
@@ -114,6 +126,9 @@ export class DeckFx {
     this.lastDeckLen = s.deck.length;
     this.renderPile(s.phase === 'intro' ? 6 : s.deck.length);
     this.animateDeals(root);
+    // Y otra vez cuando el navegador haya colocado todo
+    cancelAnimationFrame(this.placeFrame);
+    this.placeFrame = requestAnimationFrame(() => this.place());
   }
 
   private renderPile(len: number) {

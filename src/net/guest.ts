@@ -93,7 +93,8 @@ export class Guest {
 
   private retry() {
     if (this.left) return;
-    if (!this.joined || this.retries >= 10) {
+    // Unos 60 s de reintentos: da tiempo a que el anfitrión desbloquee el móvil
+    if (!this.joined || this.retries >= 24) {
       this.fail('Se ha perdido la conexión con la partida.');
       return;
     }

@@ -393,6 +393,12 @@ export class TableUI {
 
   render(state: State) {
     this.state = state;
+    // De vuelta en la portada: la próxima partida empieza de cero (reparto, mazo, cartas vistas)
+    if (state.phase === 'intro' && this.handNo !== -1) {
+      this.handNo = -1;
+      this.seen.clear();
+      this.deckFx.reset();
+    }
     if (state.handNo !== this.handNo) {
       this.handNo = state.handNo;
       this.seen.clear();
@@ -512,7 +518,7 @@ export class TableUI {
     const faceUp = seat === HUMAN || s.reveal;
     const hand = s.hands[seat].map((c, i) => this.cardHtml(s, seat, c, faceUp, i)).join('');
     const b = s.bubbles[seat];
-    const bubble = b ? `<div class="bubble ${b.tone}">${b.text}</div>` : '';
+    const bubble = b ? `<div class="bubble ${esc(b.tone)}">${esc(b.text)}</div>` : '';
     const isTurn = s.turn === seat && !s.reveal;
     const name = this.nameOf(s, seat);
     const role = seat === 2 ? 'pareja' : seat === HUMAN ? '' : 'rival';
@@ -642,17 +648,17 @@ export class TableUI {
     const p = this.pending;
     if (p?.req.type !== 'continue') return '';
     const bar = this.timer ? '<div class="turn-timer" aria-hidden="true"><i></i></div>' : '';
-    return `<div class="panel-actions">${bar}<button class="btn primary big" data-action="continue">${p.req.label}</button></div>`;
+    return `<div class="panel-actions">${bar}<button class="btn primary big" data-action="continue">${esc(p.req.label)}</button></div>`;
   }
 
   private summaryHtml(s: State) {
     if (!s.summary.length) return '';
     return `<table class="summary">${s.summary
       .map((l) => `<tr class="${l.team === null ? '' : `t${l.team}`}">
-          <th>${l.label}</th>
+          <th>${esc(l.label)}</th>
           <td class="who">${l.team === null ? '—' : TEAM_NAMES[l.team]}</td>
           <td class="pts">${l.points ? `+${l.points}` : ''}</td>
-          <td class="det">${l.detail}${l.seat === undefined ? '' : `${l.detail ? ' · ' : ''}${esc(this.nameOf(s, l.seat))}`}</td></tr>`)
+          <td class="det">${esc(l.detail)}${l.seat === undefined ? '' : `${l.detail ? ' · ' : ''}${esc(this.nameOf(s, l.seat))}`}</td></tr>`)
       .join('')}</table>`;
   }
 }
