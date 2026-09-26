@@ -76,7 +76,8 @@ export class Settings {
         <div class="st-row"><span>Reyes</span>${seg('reyes', [[8, 'A 8 reyes'], [4, 'A 4 reyes']])}</div>
         <div class="st-row"><span>Tantos por juego</span>${seg('points', [[30, 'A 30'], [40, 'A 40']])}</div>
         <div class="st-row"><span>Partida</span>${seg('toWin', [[1, '1 juego'], [2, 'Mejor de 3'], [3, 'Mejor de 5']])}</div>
-        <p class="lb-hint">A 8 reyes, los treses valen como reyes y los doses como ases. A 4 reyes, cada carta vale lo suyo.</p>
+        <div class="st-row"><span>Señas a la pareja</span>${seg('senas', [[true, 'Con señas'], [false, 'Sin señas']])}</div>
+        <p class="lb-hint">A 8 reyes, los treses valen como reyes y los doses como ases. A 4 reyes, cada carta vale lo suyo. Las señas solo se pueden hacer de lo que llevas, y un rival te las puede pillar de vez en cuando.</p>
       </div>
       <div class="lb-group">
         <h3>Sonido</h3>
@@ -104,7 +105,8 @@ export class Settings {
       this.close();
     } else if (act === 'rule') {
       const key = btn.dataset.key as keyof Rules;
-      (this.rules as unknown as Record<string, number>)[key] = Number(btn.dataset.val);
+      const raw = btn.dataset.val!;
+      (this.rules as unknown as Record<string, number | boolean>)[key] = raw === 'true' ? true : raw === 'false' ? false : Number(raw);
       saveRules(this.rules);
       this.onRules?.({ ...this.rules });
       this.render(playing);

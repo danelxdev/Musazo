@@ -3,7 +3,7 @@ import { Viewer } from '../src/game/view';
 import * as ai from '../src/game/ai';
 import { validAction } from '../src/game/validate';
 import { DEFAULT_RULES } from '../src/game/rules';
-import { CATCH_CHANCE, type ChatKind, type ChatShow, chatText, senaFor } from '../src/game/chat';
+import { CATCH_CHANCE, type ChatKind, type ChatShow, chatText, senaFor, senaValid } from '../src/game/chat';
 import type { ServerMsg } from '../src/net/ranked-protocol';
 import { BOT_RATING, kFactor, teamDelta } from './elo';
 
@@ -212,7 +212,10 @@ export class Game {
     const text = kind === 'frase' || kind === 'sena' ? chatText(kind, id) : null;
     const s = this.engine.state;
     if (!text || this.over) return;
-    if (kind === 'sena' && (!['deal', 'mus', 'discard', 'lance'].includes(s.phase) || s.reveal)) return;
+    if (kind === 'sena') {
+      if (!s.rules.senas || !['deal', 'mus', 'discard', 'lance'].includes(s.phase) || s.reveal) return;
+      if (!senaValid(s.hands[from], id)) return;
+    }
     const now = Date.now();
     if (now - (this.lastChat.get(from) ?? 0) < 1200) return;
     this.lastChat.set(from, now);
@@ -222,8 +225,10 @@ export class Game {
     }
     this.showTo(from, from, text, 'enviada');
     this.showTo((from + 2) % 4, from, text, 'sena');
+    this.engine.learn((from + 2) % 4, from, id);
     for (const rival of [(from + 1) % 4, (from + 3) % 4]) {
       if (Math.random() >= CATCH_CHANCE) continue;
+      this.engine.learn(rival, from, id);
       this.showTo(rival, from, text, 'pillada');
       this.seats[from].conn?.send({ t: 'toast', text: `¡${this.seats[rival].name} te ha pillado la seña!` });
     }

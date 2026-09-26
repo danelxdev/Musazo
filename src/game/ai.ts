@@ -1,6 +1,10 @@
 import { type Card, createDeck, effRank } from './cards';
 import { type Lance, handPoints, hasJuego, lanceWinner, paresInfo, seatOrder } from './evaluate';
 import type { Action, Request, State } from './engine';
+import { senaValid } from './chat';
+
+/** Señas que conoce un jugador en esta mano: de quién (asiento) y cuál. */
+export type Intel = Map<number, string>;
 
 const teamOf = (seat: number) => seat % 2;
 
@@ -8,14 +12,16 @@ const teamOf = (seat: number) => seat % 2;
  * Probabilidad (Monte Carlo) de que la pareja de `seat` gane el lance,
  * condicionada a lo que el resto ha declarado en pares y juego.
  */
-export function estimate(state: State, seat: number, lance: Lance, samples = 350): number {
+export function estimate(state: State, seat: number, lance: Lance, samples = 350, intel?: Intel): number {
   const own = state.hands[seat];
   const ownIds = new Set(own.map((c) => c.id));
   const pool = createDeck().filter((c) => !ownIds.has(c.id));
   const others = [0, 1, 2, 3].filter((s) => s !== seat);
   let wins = 0;
   let n = 0;
-  for (let tries = 0; n < samples && tries < samples * 12; tries++) {
+  // Con señas conocidas se descartan más manos imaginadas: se prueba más veces
+  const maxTries = samples * (intel?.size ? 40 : 12);
+  for (let tries = 0; n < samples && tries < maxTries; tries++) {
     // Muestreo parcial de 12 cartas
     for (let i = 0; i < 12; i++) {
       const j = i + Math.floor(Math.random() * (pool.length - i));
@@ -31,6 +37,9 @@ export function estimate(state: State, seat: number, lance: Lance, samples = 350
       const dj = state.declared.juego[s];
       if (dp !== null && dp !== (paresInfo(hands[s]).kind !== 'none')) { ok = false; break; }
       if (dj !== null && dj !== hasJuego(hands[s])) { ok = false; break; }
+      // Lo que ha dicho con una seña es verdad (solo se hacen señas de lo que se lleva)
+      const sena = intel?.get(s);
+      if (sena && !senaValid(hands[s], sena)) { ok = false; break; }
     }
     if (!ok) continue;
 
@@ -85,7 +94,7 @@ function chooseDiscard(hand: Card[]): string[] {
   return out.map((c) => c.id);
 }
 
-export function decide(state: State, seat: number, req: Request): Action {
+export function decide(state: State, seat: number, req: Request, intel?: Intel): Action {
   const hand = state.hands[seat];
   const r = Math.random();
   const us = state.scores[teamOf(seat)];
@@ -99,7 +108,7 @@ export function decide(state: State, seat: number, req: Request): Action {
       return { kind: 'discard', ids: chooseDiscard(hand) };
 
     case 'open': {
-      const p = estimate(state, seat, req.lance);
+      const p = estimate(state, seat, req.lance, 350, intel);
       const isPostre = seatOrder(state.mano)[3] === seat;
       if (p > 0.93 && (r < 0.08 || them >= 35)) return { kind: 'ordago' };
       if (p > 0.86) return { kind: 'envido', n: r < 0.3 ? 5 : 2 };
@@ -110,7 +119,7 @@ export function decide(state: State, seat: number, req: Request): Action {
 
     case 'respond': {
       // Si el rival envida, algo tendrá: desconfiamos un poco.
-      const p = estimate(state, seat, req.lance) - 0.08;
+      const p = estimate(state, seat, req.lance, 350, intel) - 0.08;
       const { bet } = req;
       if (bet.ordago) {
         if (p > 0.74 || (them >= 32 && p > 0.5) || (them - us >= 20 && p > 0.6)) return { kind: 'quiero' };

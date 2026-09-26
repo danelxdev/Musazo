@@ -10,10 +10,14 @@ Juego de mus en el navegador: un tapete de fieltro, la baraja española de siemp
 
 ### Lo que hay además
 
-- **Reglas a elegir** (engranaje, arriba): a 8 o a 4 reyes, a 30 o a 40 tantos, y a un juego, al mejor de 3 o al mejor de 5.
+- **Reglas a elegir** (engranaje, arriba): a 8 o a 4 reyes, a 30 o a 40 tantos, a un juego, al mejor de 3 o al mejor de 5, y con o sin señas.
 - **Mesa a tu gusto**: tapete verde, azul, granate, madera o noche, y reverso de las cartas azul, rojo, verde o negro.
 - **Mi perfil**: tu nombre y tus estadísticas (partidas y juegos ganados, rachas, órdagos y cada lance), guardadas en el navegador.
-- **Chat rápido y señas**: toca tu placa («Tú») para mandar una frase a la mesa o una seña a tu pareja. Las señas solo las ve tu pareja… salvo que un rival te pille (una vez de cada cuatro). Maite también te hace señas cuando lleva algo, y a veces pillarás las de los rivales.
+- **Chat rápido y señas**: toca tu placa («Tú») para mandar una frase a la mesa o una seña a tu pareja.
+  - Como en el reglamento, solo puedes hacer la seña de lo que llevas (duples, medias, la 31, dos reyes, dos ases o ciego): no se puede mentir.
+  - La ve tu pareja; cada rival tiene un 15 % de pillarla, y si te la pillan te enteras.
+  - La máquina las usa: tu pareja juega sabiendo lo que le has dicho, y los rivales aprovechan las que te pillan. También te hace señas cuando lleva algo.
+  - Se pueden quitar en Ajustes («Sin señas»); con amigos lo decide el anfitrión para toda la mesa.
 - **Partidas clasificatorias con ranking ELO** (necesitan el servidor de `server/`, ver [server/README.md](server/README.md)): emparejamiento por nivel, divisiones de Bronce a Txapeldun y tabla con los mejores. Sin servidor configurado aparecen como «Próximamente».
 
 ### Modos de juego

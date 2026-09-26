@@ -5,7 +5,7 @@ import {
 } from '../game/engine';
 import type { Lance } from '../game/evaluate';
 import { BEST_OF, rulesLabel, setActiveRules } from '../game/rules';
-import { type ChatKind, type ChatShow, PHRASES, SENAS } from '../game/chat';
+import { type ChatKind, type ChatShow, PHRASES, SENAS, validSenas } from '../game/chat';
 import { rankedEnabled } from '../net/ranked';
 import * as ai from '../game/ai';
 import { backHtml, faceHtml } from './cards';
@@ -205,7 +205,7 @@ export class TableUI {
   /** ¿Se pueden hacer señas ahora? (durante la mano, con tus cuatro cartas) */
   private canSign() {
     const s = this.state;
-    return !!s && ['deal', 'mus', 'discard', 'lance'].includes(s.phase) && s.hands[HUMAN].length === 4 && !s.reveal;
+    return !!s && s.rules.senas && ['deal', 'mus', 'discard', 'lance'].includes(s.phase) && s.hands[HUMAN].length === 4 && !s.reveal;
   }
 
   private openChat() {
@@ -227,13 +227,19 @@ export class TableUI {
       const on = t.dataset.tab === this.chatTab;
       t.classList.toggle('on', on);
       t.setAttribute('aria-selected', String(on));
-      if (t.dataset.tab === 'sena') (t as HTMLButtonElement).disabled = !signs;
+      if (t.dataset.tab === 'sena') {
+        (t as HTMLButtonElement).disabled = !signs;
+        t.hidden = !this.state?.rules.senas;
+      }
     });
+    // Solo las señas de lo que llevas: como en la mesa, no se puede mentir
+    const mine = this.state ? validSenas(this.state.hands[HUMAN]) : [];
     const items = this.chatTab === 'frase'
       ? PHRASES.map((p) => `<button class="chat-item" data-action="chat-send" data-kind="frase" data-id="${p.id}">${esc(p.text)}</button>`)
-      : SENAS.map((s) => `<button class="chat-item sena" data-action="chat-send" data-kind="sena" data-id="${s.id}"><span>${s.icon}</span>${esc(s.text)}</button>`);
-    const hint = this.chatTab === 'sena'
-      ? '<p class="chat-hint">Solo la ve tu pareja… si los rivales no te pillan.</p>' : '';
+      : SENAS.filter((s) => mine.includes(s.id)).map((s) => `<button class="chat-item sena" data-action="chat-send" data-kind="sena" data-id="${s.id}"><span>${s.icon}</span>${esc(s.text)}</button>`);
+    const hint = this.chatTab !== 'sena' ? ''
+      : mine.length ? '<p class="chat-hint">Solo la ve tu pareja… salvo que un rival te pille.</p>'
+        : '<p class="chat-hint">Con estas cartas no tienes seña que hacer.</p>';
     this.sheet.querySelector('.chat-items')!.innerHTML = hint + items.join('');
   }
 

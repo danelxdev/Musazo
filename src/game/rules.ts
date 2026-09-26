@@ -6,14 +6,16 @@ export interface Rules {
   points: 30 | 40;
   /** Juegos para ganar la partida: 1 (a un juego), 2 (al mejor de 3) o 3 (al mejor de 5). */
   toWin: 1 | 2 | 3;
+  /** Jugar con señas (a la pareja, en el chat de la mesa). */
+  senas: boolean;
 }
 
-export const DEFAULT_RULES: Rules = { reyes: 8, points: 40, toWin: 2 };
+export const DEFAULT_RULES: Rules = { reyes: 8, points: 40, toWin: 2, senas: true };
 
 export const BEST_OF: Record<Rules['toWin'], string> = { 1: 'a un juego', 2: 'al mejor de 3', 3: 'al mejor de 5' };
 
 /** Resumen corto: «Mus a 8 reyes · a 40 · al mejor de 3». */
-export const rulesLabel = (r: Rules) => `A ${r.reyes} reyes · a ${r.points} · ${BEST_OF[r.toWin]}`;
+export const rulesLabel = (r: Rules) => `A ${r.reyes} reyes · a ${r.points} · ${BEST_OF[r.toWin]}${r.senas === false ? ' · sin señas' : ''}`;
 
 /**
  * Reglas con las que se evalúan las cartas ahora mismo. Las fija el motor al empezar
@@ -32,6 +34,7 @@ export function sanitizeRules(x: unknown): Rules {
     reyes: r.reyes === 4 ? 4 : 8,
     points: r.points === 30 ? 30 : 40,
     toWin: r.toWin === 1 || r.toWin === 3 ? r.toWin : 2,
+    senas: r.senas !== false,
   };
 }
 

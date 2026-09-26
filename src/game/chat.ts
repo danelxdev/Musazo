@@ -31,8 +31,8 @@ export type ChatKind = 'frase' | 'sena';
 /** Cómo lo ve cada uno: frase para todos, seña para la pareja, seña enviada (el que la hace), seña pillada (un rival). */
 export type ChatShow = 'frase' | 'sena' | 'enviada' | 'pillada';
 
-/** Probabilidad de que un rival pille una seña. */
-export const CATCH_CHANCE = 0.25;
+/** Probabilidad de que un rival pille una seña (parecido a otras apps de mus: pasa, pero poco). */
+export const CATCH_CHANCE = 0.15;
 
 export function chatText(kind: ChatKind, id: string): string | null {
   if (kind === 'frase') return PHRASES.find((p) => p.id === id)?.text ?? null;
@@ -40,16 +40,33 @@ export function chatText(kind: ChatKind, id: string): string | null {
   return s ? `${s.icon} ${s.text}` : null;
 }
 
-/** La seña que haría un buen compañero con estas cartas (o ninguna si no merece la pena). */
-export function senaFor(hand: Card[]): string | null {
-  if (hand.length !== 4) return null;
+/**
+ * Señas que se pueden hacer con estas cartas. Como en el reglamento, solo se hace
+ * la seña de lo que de verdad se lleva (no se puede mentir).
+ */
+export function validSenas(hand: Card[]): string[] {
+  if (hand.length !== 4) return [];
   const p = paresInfo(hand);
-  if (p.kind === 'duples') return 'duples';
-  if (p.kind === 'medias') return 'medias';
-  if (handPoints(hand) === 31) return '31';
+  const pts = handPoints(hand);
   const reyes = hand.filter((c) => effRank(c) === 12).length;
   const ases = hand.filter((c) => effRank(c) === 1).length;
-  if (reyes >= 2) return 'reyes';
-  if (ases >= 2) return 'ases';
-  return Math.random() < 0.25 ? 'ciego' : null;
+  const out: string[] = [];
+  if (p.kind === 'duples') out.push('duples');
+  if (p.kind === 'medias') out.push('medias');
+  if (pts === 31) out.push('31');
+  if (reyes >= 2) out.push('reyes');
+  if (ases >= 2) out.push('ases');
+  // Ciego: ni pares ni juego
+  if (p.kind === 'none' && pts < 31) out.push('ciego');
+  return out;
+}
+
+export const senaValid = (hand: Card[], id: string) => validSenas(hand).includes(id);
+
+/** La seña que haría un buen compañero con estas cartas (o ninguna si no merece la pena). */
+export function senaFor(hand: Card[]): string | null {
+  const valid = validSenas(hand);
+  const best = ['duples', 'medias', '31', 'reyes', 'ases'].find((id) => valid.includes(id));
+  if (best) return best;
+  return valid.includes('ciego') && Math.random() < 0.3 ? 'ciego' : null;
 }

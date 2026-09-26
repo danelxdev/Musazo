@@ -9,7 +9,7 @@ import { Lobby } from './ui/lobby';
 import { Settings } from './ui/settings';
 import { Profile } from './ui/profile';
 import { StatsRecorder } from './game/stats';
-import { CATCH_CHANCE, type ChatKind, type ChatShow, chatText, senaFor } from './game/chat';
+import { CATCH_CHANCE, type ChatKind, type ChatShow, chatText, senaFor, senaValid } from './game/chat';
 import { type Rules, savedRules } from './game/rules';
 import { CounterView, isStandalone, lastViewWasCounter } from './counter/view';
 import { preloadCards } from './ui/cards';
@@ -169,7 +169,11 @@ function deliverChat(from: number, kind: ChatKind, id: string) {
   const text = chatText(kind, id);
   if (!text) return;
   const s = engine.state;
-  if (kind === 'sena' && (!['deal', 'mus', 'discard', 'lance'].includes(s.phase) || s.reveal)) return;
+  if (kind === 'sena') {
+    if (!s.rules.senas || !['deal', 'mus', 'discard', 'lance'].includes(s.phase) || s.reveal) return;
+    // Solo se hace la seña de lo que se lleva
+    if (!senaValid(s.hands[from], id)) return;
+  }
   const now = performance.now();
   if (now - (lastChat.get(from) ?? -Infinity) < 1200) return;
   lastChat.set(from, now);
@@ -180,8 +184,11 @@ function deliverChat(from: number, kind: ChatKind, id: string) {
   const partner = (from + 2) % 4;
   if (isHuman(from)) showTo(from, from, text, 'enviada');
   if (isHuman(partner)) showTo(partner, from, text, 'sena');
+  // La pareja siempre se entera (si es la máquina, juega sabiéndolo)
+  engine.learn(partner, from, id);
   for (const rival of [(from + 1) % 4, (from + 3) % 4]) {
     if (Math.random() >= CATCH_CHANCE) continue;
+    engine.learn(rival, from, id);
     if (isHuman(rival)) showTo(rival, from, text, 'pillada');
     if (isHuman(from)) notifySeat(from, `¡${s.names[rival]} te ha pillado la seña!`);
   }
@@ -189,7 +196,7 @@ function deliverChat(from: number, kind: ChatKind, id: string) {
 
 /** Al empezar los lances, los compañeros de la máquina hacen su seña si llevan algo. */
 function botSigns(s: State) {
-  if (s.phase !== 'lance' || s.lance !== 'grande' || s.handNo === signedHand) return;
+  if (!s.rules.senas || s.phase !== 'lance' || s.lance !== 'grande' || s.handNo === signedHand) return;
   signedHand = s.handNo;
   const hand = s.handNo;
   for (let seat = 0; seat < 4; seat++) {

@@ -174,6 +174,8 @@ export class Engine {
   /** Asientos que juega la máquina (se puede cambiar en marcha: si alguien se va, sigue la máquina). */
   bots = [false, true, true, true];
   private text: Text = () => '';
+  /** Señas que conoce cada asiento en esta mano (las usa la máquina al decidir). */
+  private intel: Map<number, string>[] = [new Map(), new Map(), new Map(), new Map()];
   /** Manos jugadas en la partida actual (la primera es a mus corrido). */
   private matchHands = 0;
   /** Al cortar la partida: volver a la portada en vez de empezar otra. */
@@ -196,6 +198,11 @@ export class Engine {
   /** Vuelve a pintar la mesa (por ejemplo, porque ha entrado o salido alguien). */
   refresh() {
     this.emit();
+  }
+
+  /** Un asiento se entera de una seña (se la hace su pareja o la pilla de un rival). */
+  learn(seat: number, from: number, sena: string) {
+    this.intel[seat].set(from, sena);
   }
 
   /** El mensaje de la mesa tal como lo lee un asiento. */
@@ -226,7 +233,7 @@ export class Engine {
     this.emit();
     if (!this.bots[seat]) return this.io.ask(seat, req, this.state);
     await this.sleep(this.botDelay * (0.7 + Math.random() * 0.6));
-    return ai.decide(this.state, seat, req);
+    return ai.decide(this.state, seat, req, this.intel[seat]);
   }
 
   async run() {
@@ -341,6 +348,7 @@ export class Engine {
   private async playHand() {
     const s = this.state;
     s.handNo++;
+    this.intel.forEach((m) => m.clear());
     s.phase = 'deal';
     s.deck = shuffle(createDeck());
     s.discards = [];
