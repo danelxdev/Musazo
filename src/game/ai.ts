@@ -109,8 +109,10 @@ export function decide(state: State, seat: number, req: Request, intel?: Intel):
 
     case 'open': {
       const p = estimate(state, seat, req.lance, 350, intel);
+      // Para el órdago, sin contar con las señas: sabiéndolas se confía de más y el órdago se juega la partida
+      const safe = intel?.size ? estimate(state, seat, req.lance) : p;
       const isPostre = seatOrder(state.mano)[3] === seat;
-      if (p > 0.93 && (r < 0.08 || them >= 35)) return { kind: 'ordago' };
+      if (safe > 0.93 && (r < 0.08 || them >= 35)) return { kind: 'ordago' };
       if (p > 0.86) return { kind: 'envido', n: r < 0.3 ? 5 : 2 };
       if (p > (isPostre ? 0.66 : 0.74)) return { kind: 'envido', n: 2 };
       if (r < 0.05) return { kind: 'envido', n: 2 };
@@ -120,12 +122,14 @@ export function decide(state: State, seat: number, req: Request, intel?: Intel):
     case 'respond': {
       // Si el rival envida, algo tendrá: desconfiamos un poco.
       const p = estimate(state, seat, req.lance, 350, intel) - 0.08;
+      // Órdagos (querer o echar): sin contar con las señas, como arriba
+      const safe = intel?.size ? estimate(state, seat, req.lance) - 0.08 : p;
       const { bet } = req;
       if (bet.ordago) {
-        if (p > 0.74 || (them >= 32 && p > 0.5) || (them - us >= 20 && p > 0.6)) return { kind: 'quiero' };
+        if (safe > 0.74 || (them >= 32 && safe > 0.5) || (them - us >= 20 && safe > 0.6)) return { kind: 'quiero' };
         return { kind: 'noquiero' };
       }
-      if (p > 0.9 && r < 0.08) return { kind: 'ordago' };
+      if (safe > 0.9 && r < 0.08) return { kind: 'ordago' };
       if (p > 0.8 && bet.amount < 8) return { kind: 'envido', n: 2 };
       if (p > 0.56 || (bet.amount <= 2 && p > 0.46)) return { kind: 'quiero' };
       return { kind: 'noquiero' };
