@@ -1,7 +1,7 @@
 import type { Card } from '../game/cards';
 import { LANCE_NAMES, describeJuego, describePares } from '../game/evaluate';
 import {
-  type Action, type Request, type State, HUMAN, Restart, JUEGOS_TO_WIN, SEAT_NAMES, TEAM_NAMES, WIN_POINTS, teamOf,
+  type Action, type Request, type State, HUMAN, Restart, JUEGOS_TO_WIN, TEAM_NAMES, WIN_POINTS, teamOf,
 } from '../game/engine';
 import type { Lance } from '../game/evaluate';
 import * as ai from '../game/ai';
@@ -17,6 +17,10 @@ export const TURN_MS = 20000;
 /** Tiempo para pasar a la siguiente mano o juego. */
 const CONTINUE_MS = 15000;
 
+/** Los nombres los escriben los jugadores: se escapan antes de meterlos en el HTML. */
+export const esc = (t: string) =>
+  t.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
 interface TurnTimer {
   total: number;
   start: number;
@@ -29,6 +33,7 @@ const ICON = {
   book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
   sound: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  users: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 19.5c.6-3.3 3-5 6-5s5.4 1.7 6 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M15.5 5.2a3.2 3.2 0 0 1 0 5.6M18 14.8c1.6.7 2.7 2.3 3 4.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   exit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   tally: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M3.5 16.5l17-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   muted: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
@@ -64,6 +69,7 @@ const LAYOUT = `
       <div class="overlay" data-region="overlay"></div>
     </div>
   </main>
+  <div class="toast" role="status" aria-live="polite" hidden></div>
   <div class="confirm" hidden>
     <div class="confirm-scrim" data-action="restart-cancel"></div>
     <div class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-text">
@@ -100,12 +106,17 @@ export class TableUI {
   private turnKey = '';
   private turnStart = 0;
   onStart: (() => void) | null = null;
+  /** Abrir el menú de partidas con amigos. */
+  onFriends: (() => void) | null = null;
   onRules: (() => void) | null = null;
   onCounter: (() => void) | null = null;
   onRestart: (() => void) | null = null;
   /** Salir de la partida y volver a la portada. */
   onExit: (() => void) | null = null;
   private confirmKind: 'restart' | 'exit' = 'restart';
+  /** Partida sola contra la máquina, o en línea como anfitrión o invitado. */
+  private role: 'solo' | 'host' | 'guest' = 'solo';
+  private toastTimer = 0;
   /** Avisa cuando se abre o cierra el diálogo de confirmación (para pausar la partida). */
   onConfirmToggle: ((open: boolean) => void) | null = null;
 
@@ -126,6 +137,29 @@ export class TableUI {
     const b = this.root.querySelector<HTMLButtonElement>('[data-action="mute"]')!;
     b.innerHTML = isMuted() ? ICON.muted : ICON.sound;
     b.setAttribute('aria-pressed', String(isMuted()));
+  }
+
+  /** Cómo se juega esta partida: cambia qué botones hay y qué pasa al salir. */
+  setRole(role: 'solo' | 'host' | 'guest') {
+    this.role = role;
+    const app = this.root.querySelector('.app')!;
+    app.classList.toggle('online', role !== 'solo');
+    app.classList.toggle('guest', role === 'guest');
+  }
+
+  /** Aviso breve arriba del tapete (alguien se ha ido, ha vuelto…). */
+  toast(text: string, ms = 4200) {
+    const el = this.root.querySelector<HTMLElement>('.toast')!;
+    el.textContent = text;
+    el.hidden = false;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    window.clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => {
+      el.classList.remove('show');
+      this.toastTimer = window.setTimeout(() => { el.hidden = true; }, 300);
+    }, ms);
   }
 
   private onClick(e: Event) {
@@ -177,6 +211,10 @@ export class TableUI {
       this.onStart?.();
       return;
     }
+    if (act === 'friends') {
+      this.onFriends?.();
+      return;
+    }
     if (act === 'inc' || act === 'dec') {
       this.amount = Math.max(2, Math.min(30, this.amount + (act === 'inc' ? 1 : -1)));
       this.rerender();
@@ -221,8 +259,13 @@ export class TableUI {
   private openConfirm(kind: 'restart' | 'exit') {
     this.confirmKind = kind;
     const el = this.root.querySelector<HTMLElement>('.confirm')!;
+    const exitText = {
+      solo: 'Volverás a la pantalla principal y se perderá la partida actual.',
+      host: 'La partida se terminará para todos los jugadores.',
+      guest: 'Volverás a la pantalla principal y la máquina jugará por ti.',
+    }[this.role];
     const copy = kind === 'exit'
-      ? ['¿Salir de la partida?', 'Volverás a la pantalla principal y se perderá la partida actual.', 'Salir']
+      ? ['¿Salir de la partida?', exitText, 'Salir']
       : ['¿Reiniciar la partida?', 'Se perderán los tantos y los juegos de la partida actual y empezaréis de cero.', 'Reiniciar'];
     el.querySelector('#confirm-title')!.textContent = copy[0];
     el.querySelector('#confirm-text')!.textContent = copy[1];
@@ -314,23 +357,9 @@ export class TableUI {
   private onTimeout() {
     if (!this.pending || !this.state) return;
     const req = this.pending.req;
-    let action: Action;
-    switch (req.type) {
-      case 'mus':
-        action = { kind: 'corto' };
-        break;
-      case 'discard':
-        action = this.selected.size ? { kind: 'discard', ids: [...this.selected] } : ai.decide(this.state, HUMAN, req);
-        break;
-      case 'open':
-        action = { kind: 'paso' };
-        break;
-      case 'respond':
-        action = { kind: 'noquiero' };
-        break;
-      default:
-        action = { kind: 'continue' };
-    }
+    const action: Action = req.type === 'discard' && this.selected.size
+      ? { kind: 'discard', ids: [...this.selected] }
+      : ai.prudent(this.state, HUMAN, req);
     this.resolvePending(action);
   }
 
@@ -473,7 +502,7 @@ export class TableUI {
     }
     if (seat === HUMAN && this.pending?.req.type === 'discard') classes.push('selectable');
     if (seat === HUMAN && this.selected.has(card.id)) classes.push('selected');
-    const html = faceUp ? faceHtml(card.id, classes.join(' '), style) : backHtml(classes.join(' '), style);
+    const html = faceUp ? faceHtml(`${card.rank}-${card.suit}`, classes.join(' '), style) : backHtml(classes.join(' '), style);
     const born = age < DEAL_MS ? ` data-born="${Math.round(t)}"` : '';
     return html.replace('<div class="card', `<div data-id="${card.id}"${born} class="card`);
   }
@@ -485,19 +514,24 @@ export class TableUI {
     const b = s.bubbles[seat];
     const bubble = b ? `<div class="bubble ${b.tone}">${b.text}</div>` : '';
     const isTurn = s.turn === seat && !s.reveal;
-    const name = SEAT_NAMES[seat];
-    const role = seat === 2 ? 'compañera' : seat === HUMAN ? '' : 'rival';
+    const name = this.nameOf(s, seat);
+    const role = seat === 2 ? 'pareja' : seat === HUMAN ? '' : 'rival';
     const deciding = s.musCorrido && (s.phase === 'deal' || s.phase === 'mus' || s.phase === 'discard');
     const mano = s.mano === seat && !deciding ? '<span class="mano" title="Es mano">mano</span>' : '';
     const info = (seat === HUMAN || s.reveal) && s.hands[seat].length === 4
       ? `<div class="handinfo">${describePares(s.hands[seat])} · ${describeJuego(s.hands[seat])}</div>` : '';
     return `
       <div class="plate team${teamOf(seat)} ${isTurn ? 'turn' : ''}">
-        <span class="avatar">${name[0]}${isTurn ? '<svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16"/></svg>' : ''}</span><span class="pname">${name}</span>${role ? `<span class="role">${role}</span>` : ''}${mano}
+        <span class="avatar">${esc(name[0]?.toUpperCase() ?? '?')}${isTurn ? '<svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16"/></svg>' : ''}</span><span class="pname">${esc(name)}</span>${role ? `<span class="role">${role}</span>` : ''}${mano}
       </div>
       <div class="hand ${seat === HUMAN ? 'mine' : 'mini'}">${hand}</div>
       ${info}
       ${bubble}`;
+  }
+
+  /** «Tú» para el que mira; los demás, por su nombre. */
+  private nameOf(s: State, seat: number) {
+    return seat === HUMAN ? 'Tú' : s.names[seat];
   }
 
   private renderCenter(s: State) {
@@ -510,7 +544,7 @@ export class TableUI {
         ? `<div class="bet ordago">Órdago <small>${TEAM_NAMES[s.bet.team]}</small></div>`
         : `<div class="bet"><b>${s.bet.amount}</b> <small>envite · ${TEAM_NAMES[s.bet.team]}</small></div>`;
     }
-    const msg = s.message ? `<div class="msg">${s.message}</div>` : '';
+    const msg = s.message ? `<div class="msg">${esc(s.message)}</div>` : '';
     const corrido = s.musCorrido && (s.phase === 'deal' || s.phase === 'mus' || s.phase === 'discard')
       ? '<div class="corrido-tag" title="Primera mano: quien corte el mus será mano">Mus corrido</div>' : '';
     return `${corrido}${msg}${bet}`;
@@ -520,7 +554,7 @@ export class TableUI {
     const p = this.pending;
     if (!p) {
       if (s.turn !== null && s.turn !== HUMAN && s.phase !== 'showdown' && s.phase !== 'deal') {
-        return `<div class="waiting">${SEAT_NAMES[s.turn]} está pensando<span class="dots"><i></i><i></i><i></i></span></div>`;
+        return `<div class="waiting">${esc(s.names[s.turn])} está pensando<span class="dots"><i></i><i></i><i></i></span></div>`;
       }
       return '';
     }
@@ -561,8 +595,11 @@ export class TableUI {
       return `<div class="intro">
         <div class="fan">${fan.map((id, i) => faceHtml(id, '', `--f:${i - 2}`)).join('')}</div>
         <img class="intro-logo" src="${BASE}logo-light.png" alt="musazo" width="1400" height="218">
-        <p class="tag">Mus a 8 reyes · al mejor de 3 juegos · tú y Maite contra Iñaki y Koldo</p>
-        <button class="btn primary big play" data-action="start">Jugar</button>
+        <p class="tag">Mus a 8 reyes · al mejor de 3 juegos</p>
+        <div class="intro-play">
+          <button class="btn primary big play" data-action="start">Jugar contra la máquina</button>
+          <button class="btn big play friends" data-action="friends">${ICON.users}Jugar con amigos</button>
+        </div>
         <div class="intro-links">
           <button class="link-btn" data-action="rules">¿Primera vez? Lee las reglas</button>
           <button class="link-btn" data-action="counter">¿Con cartas de verdad? Cuenta los tantos aquí</button>
@@ -614,7 +651,7 @@ export class TableUI {
           <th>${l.label}</th>
           <td class="who">${l.team === null ? '—' : TEAM_NAMES[l.team]}</td>
           <td class="pts">${l.points ? `+${l.points}` : ''}</td>
-          <td class="det">${l.detail}</td></tr>`)
+          <td class="det">${l.detail}${l.seat === undefined ? '' : `${l.detail ? ' · ' : ''}${esc(this.nameOf(s, l.seat))}`}</td></tr>`)
       .join('')}</table>`;
   }
 }

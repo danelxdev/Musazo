@@ -126,3 +126,19 @@ export function decide(state: State, seat: number, req: Request): Action {
       return { kind: 'continue' };
   }
 }
+
+/** Se acabó el tiempo para decidir: se juega lo más prudente (y los descartes, como la máquina). */
+export function prudent(state: State, seat: number, req: Request): Action {
+  switch (req.type) {
+    case 'mus':
+      return { kind: 'corto' };
+    case 'discard':
+      return decide(state, seat, req);
+    case 'open':
+      return { kind: 'paso' };
+    case 'respond':
+      return { kind: 'noquiero' };
+    default:
+      return { kind: 'continue' };
+  }
+}
