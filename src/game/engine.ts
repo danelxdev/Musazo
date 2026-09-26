@@ -3,15 +3,13 @@ import {
   type Lance, LANCE_NAMES, hasJuego, lanceBonus, lanceWinner, paresInfo, seatOrder,
 } from './evaluate';
 import * as ai from './ai';
+import { type Rules, DEFAULT_RULES, setActiveRules } from './rules';
 
 export type Team = 0 | 1;
 export const teamOf = (seat: number): Team => (seat % 2) as Team;
 export const TEAM_NAMES = ['Nosotros', 'Ellos'] as const;
 export const SEAT_NAMES = ['Tú', 'Iñaki', 'Maite', 'Koldo'] as const;
 export const HUMAN = 0;
-export const WIN_POINTS = 40;
-/** La partida es al mejor de 3 juegos: gana quien se lleva 2. */
-export const JUEGOS_TO_WIN = 2;
 
 /** Reparte el que está a la izquierda de la mano (el postre). */
 export const dealerOf = (mano: number) => (mano + 3) % 4;
@@ -78,6 +76,8 @@ export type Action =
 
 export interface State {
   phase: Phase;
+  /** Reglas de esta partida (reyes, tantos por juego, juegos para ganar). */
+  rules: Rules;
   /** Nombre de cada asiento. */
   names: string[];
   handNo: number;
@@ -101,7 +101,7 @@ export interface State {
   musCorrido: boolean;
   /** Junto a quién está el mazo (normalmente, el que reparte). En el mus corrido va pasando. */
   deckSeat: number;
-  /** Pareja que ha ganado la partida (al mejor de 3 juegos), si ya ha terminado. */
+  /** Pareja que ha ganado la partida, si ya ha terminado. */
   matchWinner: Team | null;
   /** Puntos apuntados en esta mano (para el marcador animado). */
   lastGain: [number, number];
@@ -112,15 +112,22 @@ class GameEnd extends Error {}
 /** Se lanza para cortar la partida en curso cuando el jugador la reinicia. */
 export class Restart extends Error {}
 
-/** Escala de tiempos (0 en simulaciones). */
-export const timing = { scale: 1, paused: false, epoch: 0 };
+/** Reloj de una partida: escala de tiempos (0 en simulaciones), pausa y número de reinicio. */
+export interface Timing {
+  scale: number;
+  paused: boolean;
+  epoch: number;
+}
 
-async function sleep(ms: number) {
-  const epoch = timing.epoch;
-  await new Promise((r) => setTimeout(r, ms * timing.scale));
+/** El reloj de la partida de este navegador. En el servidor cada partida lleva el suyo. */
+export const timing: Timing = { scale: 1, paused: false, epoch: 0 };
+
+async function sleepOn(t: Timing, ms: number) {
+  const epoch = t.epoch;
+  await new Promise((r) => setTimeout(r, ms * t.scale));
   // Pausa mientras se leen las reglas
-  while (timing.paused && timing.epoch === epoch) await new Promise((r) => setTimeout(r, 150));
-  if (timing.epoch !== epoch) throw new Restart();
+  while (t.paused && t.epoch === epoch) await new Promise((r) => setTimeout(r, 150));
+  if (t.epoch !== epoch) throw new Restart();
 }
 
 export interface EngineIO {
@@ -133,9 +140,10 @@ export interface EngineIO {
 }
 
 /** Estado de la portada, antes de empezar a jugar. */
-function introState(names: string[] = [...SEAT_NAMES]): State {
+function introState(names: string[] = [...SEAT_NAMES], rules: Rules = DEFAULT_RULES): State {
   return {
     phase: 'intro',
+    rules: { ...rules },
     names,
     handNo: 0,
     hands: [[], [], [], []],
@@ -172,12 +180,17 @@ export class Engine {
   private exiting = false;
   botDelay = 900;
 
-  constructor(private io: EngineIO) {}
+  constructor(private io: EngineIO, private clock: Timing = timing) {}
+
+  private sleep(ms: number) {
+    return sleepOn(this.clock, ms);
+  }
 
   /** Nombres y quién juega cada asiento (antes de empezar). */
-  configure(names: string[], bots: boolean[]) {
+  configure(names: string[], bots: boolean[], rules: Rules = DEFAULT_RULES) {
     this.bots = bots.slice();
-    this.state = introState(names.slice());
+    this.state = introState(names.slice(), rules);
+    setActiveRules(rules);
   }
 
   /** Vuelve a pintar la mesa (por ejemplo, porque ha entrado o salido alguien). */
@@ -212,7 +225,7 @@ export class Engine {
     this.state.turn = seat;
     this.emit();
     if (!this.bots[seat]) return this.io.ask(seat, req, this.state);
-    await sleep(this.botDelay * (0.7 + Math.random() * 0.6));
+    await this.sleep(this.botDelay * (0.7 + Math.random() * 0.6));
     return ai.decide(this.state, seat, req);
   }
 
@@ -224,7 +237,7 @@ export class Engine {
         if (!(e instanceof Restart)) throw e;
         if (this.exiting) {
           this.exiting = false;
-          this.state = introState(this.state.names);
+          this.state = introState(this.state.names, this.state.rules);
           this.emit();
           return;
         }
@@ -237,13 +250,13 @@ export class Engine {
   stop() {
     this.exiting = true;
     this.restart();
-    this.io.onChange(introState(this.state.names));
+    this.io.onChange(introState(this.state.names, this.state.rules));
   }
 
   /** Corta la partida en curso y empieza una nueva de cero. */
   restart() {
-    timing.epoch++;
-    timing.paused = false;
+    this.clock.epoch++;
+    this.clock.paused = false;
     this.io.cancel?.();
   }
 
@@ -268,9 +281,10 @@ export class Engine {
     this.emit();
   }
 
-  /** Una partida: al mejor de 3 juegos de 40 tantos. */
+  /** Una partida: gana quien se lleve los juegos que marquen las reglas. */
   private async playMatch() {
     this.matchHands = 0;
+    setActiveRules(this.state.rules);
     {
       this.state.games = [0, 0];
       this.state.matchWinner = null;
@@ -287,7 +301,7 @@ export class Engine {
         }
         const w = this.state.winner!;
         this.state.games[w]++;
-        const matchOver = this.state.games[w] >= JUEGOS_TO_WIN;
+        const matchOver = this.state.games[w] >= this.state.rules.toWin;
         if (matchOver) this.state.matchWinner = w;
         this.state.phase = 'gameover';
         this.state.turn = null;
@@ -302,10 +316,10 @@ export class Engine {
 
   private addPoints(team: Team, n: number) {
     const s = this.state;
-    s.scores[team] = Math.min(WIN_POINTS, s.scores[team] + n);
+    s.scores[team] = Math.min(s.rules.points, s.scores[team] + n);
     s.lastGain[team] += n;
     this.emit();
-    if (s.scores[team] >= WIN_POINTS) {
+    if (s.scores[team] >= s.rules.points) {
       s.winner = team;
       throw new GameEnd();
     }
@@ -356,17 +370,17 @@ export class Engine {
     }
     this.emit();
     // Tiempo para recoger las cartas, llevar el mazo al que reparte y barajar
-    await sleep(s.handNo === 1 ? 1100 : 1950);
+    await this.sleep(s.handNo === 1 ? 1100 : 1950);
 
     for (let round = 0; round < 4; round++) {
       for (const seat of seatOrder(s.mano)) {
         s.hands[seat].push(s.deck.pop()!);
         this.io.sound('deal');
         this.emit();
-        await sleep(70);
+        await this.sleep(70);
       }
     }
-    await sleep(400);
+    await this.sleep(400);
 
     await this.musPhase();
 
@@ -411,14 +425,14 @@ export class Engine {
           s.deckSeat = dealerOf(cutter);
           this.msg((v) => (cutter === v ? 'Cortas el mus: eres mano' : `Corta ${s.names[cutter]}: es mano`));
           this.emit();
-          await sleep(1400);
+          await this.sleep(1400);
           s.musCorrido = false;
           return;
         }
-        await sleep(900);
+        await this.sleep(900);
         return;
       }
-      await sleep(600);
+      await this.sleep(600);
 
       s.phase = 'discard';
       this.msg('Descartes');
@@ -433,7 +447,7 @@ export class Engine {
         this.say(seat, `${out.length} ${out.length === 1 ? 'carta' : 'cartas'}`, 'neutral');
       }
       s.turn = null;
-      await sleep(300);
+      await this.sleep(300);
       if (s.musCorrido) {
         // Mus corrido: el mazo pasa al siguiente, que reparte los descartes, y la mano corre un puesto
         s.mano = (s.mano + 1) % 4;
@@ -441,23 +455,23 @@ export class Engine {
         const m = s.mano;
         this.msg((v) => `Mus corrido · la mano pasa a ${m === v ? 'ti' : s.names[m]}`);
         this.emit();
-        await sleep(1200);
+        await this.sleep(1200);
       }
       const giver = dealerOf(s.mano);
       this.msg((v) => (giver === v ? 'Das cartas tú' : `Da cartas ${s.names[giver]}`));
       this.emit();
-      await sleep(350);
+      await this.sleep(350);
       const pool = roundDiscards.flat();
       for (const seat of seatOrder(s.mano)) {
         for (let i = 0; i < roundDiscards[seat].length; i++) {
           s.hands[seat].push(this.draw(pool));
           this.io.sound('deal');
           this.emit();
-          await sleep(80);
+          await this.sleep(80);
         }
       }
       s.discards.push(...pool);
-      await sleep(500);
+      await this.sleep(500);
     }
   }
 
@@ -469,10 +483,10 @@ export class Engine {
       s.declared[kind][seat] = has;
       s.turn = seat;
       this.say(seat, has ? `${kind === 'pares' ? 'Pares' : 'Juego'} sí` : 'No', has ? 'yes' : 'no');
-      await sleep(this.bots[seat] ? 650 : 450);
+      await this.sleep(this.bots[seat] ? 650 : 450);
     }
     s.turn = null;
-    await sleep(500);
+    await this.sleep(500);
   }
 
   private async playLance(initial: Lance) {
@@ -484,7 +498,7 @@ export class Engine {
     s.bubbles = [null, null, null, null];
     this.msg(LANCE_NAMES[lance]);
     this.emit();
-    await sleep(500);
+    await this.sleep(500);
 
     let participants = [0, 1, 2, 3];
     if (lance === 'pares' || lance === 'juego') {
@@ -497,7 +511,7 @@ export class Engine {
         participants = [0, 1, 2, 3];
         s.bubbles = [null, null, null, null];
         this.emit();
-        await sleep(900);
+        await this.sleep(900);
       } else {
         const teams = new Set(participants.map(teamOf));
         if (teams.size < 2) {
@@ -508,7 +522,7 @@ export class Engine {
             ? `${name}: solo ${teamLabel(only, v).toLowerCase()} · no se juega`
             : `Nadie tiene ${lance}`));
           this.emit();
-          await sleep(1200);
+          await this.sleep(1200);
           return;
         }
         s.bubbles = [null, null, null, null];
@@ -540,7 +554,7 @@ export class Engine {
       s.records.push({ lance, status: 'paso', amount: 1, participants });
       this.msg(`${LANCE_NAMES[lance]} en paso`);
       this.emit();
-      await sleep(900);
+      await this.sleep(900);
       return;
     }
 
@@ -582,7 +596,7 @@ export class Engine {
         s.records.push({ lance, status: 'querido', amount: bet.amount, betTeam: bet.team, participants });
         this.msg(`${LANCE_NAMES[lance]}: ${bet.amount} queridos`);
         this.emit();
-        await sleep(1000);
+        await this.sleep(1000);
         return;
       }
 
@@ -590,9 +604,9 @@ export class Engine {
       const b = bet;
       this.msg((v) => `${b.team === teamOf(v) ? 'Nos llevamos' : 'Se llevan'} ${b.prev} de deje`);
       this.emit();
-      await sleep(700);
+      await this.sleep(700);
       this.addPoints(bet.team, bet.prev);
-      await sleep(700);
+      await this.sleep(700);
       return;
     }
   }
@@ -606,14 +620,14 @@ export class Engine {
     s.summary = [{
       label: `Órdago a ${LANCE_NAMES[lance].toLowerCase()}`,
       team: teamOf(w),
-      points: WIN_POINTS,
+      points: s.rules.points,
       detail: 'Gana',
       seat: w,
     }];
     this.msg('¡Órdago querido! Se enseñan las cartas');
     this.emit();
-    await sleep(2200);
-    s.scores[teamOf(w)] = WIN_POINTS;
+    await this.sleep(2200);
+    s.scores[teamOf(w)] = s.rules.points;
     s.winner = teamOf(w);
     this.emit();
     throw new GameEnd();
@@ -635,7 +649,7 @@ export class Engine {
     s.bubbles = [null, null, null, null];
     this.msg('Se ven las cartas');
     this.emit();
-    await sleep(900);
+    await this.sleep(900);
 
     for (const r of s.records) {
       const name = LANCE_NAMES[r.lance];
@@ -685,7 +699,7 @@ export class Engine {
       const shown = winnerSeat >= 0 && r.status !== 'noquerido' && r.status !== 'sinjugada';
       s.summary.push({ label: name, team, points: pts, detail, seat: shown ? winnerSeat : undefined });
       this.emit();
-      await sleep(550);
+      await this.sleep(550);
       if (team !== null && pts > 0) this.addPoints(team, pts);
     }
 

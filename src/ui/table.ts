@@ -1,9 +1,12 @@
 import type { Card } from '../game/cards';
 import { LANCE_NAMES, describeJuego, describePares } from '../game/evaluate';
 import {
-  type Action, type Request, type State, HUMAN, Restart, JUEGOS_TO_WIN, TEAM_NAMES, WIN_POINTS, teamOf,
+  type Action, type Request, type State, HUMAN, Restart, TEAM_NAMES, teamOf,
 } from '../game/engine';
 import type { Lance } from '../game/evaluate';
+import { BEST_OF, rulesLabel, setActiveRules } from '../game/rules';
+import { type ChatKind, type ChatShow, PHRASES, SENAS } from '../game/chat';
+import { rankedEnabled } from '../net/ranked';
 import * as ai from '../game/ai';
 import { backHtml, faceHtml } from './cards';
 import { DEAL_MS, DeckFx } from './deckfx';
@@ -33,6 +36,8 @@ const ICON = {
   book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
   sound: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5h15a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17h-1A1.5 1.5 0 0 1 3 15.5V7a1.5 1.5 0 0 1 1.5-1.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
   users: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 19.5c.6-3.3 3-5 6-5s5.4 1.7 6 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M15.5 5.2a3.2 3.2 0 0 1 0 5.6M18 14.8c1.6.7 2.7 2.3 3 4.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   exit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   tally: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M3.5 16.5l17-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
@@ -51,7 +56,8 @@ const LAYOUT = `
       <button class="pill-btn restart-btn" data-action="restart" aria-label="Reiniciar partida">${ICON.restart}<span>Reiniciar</span></button>
       <button class="pill-btn counter-btn" data-action="counter" aria-label="Contador de tantos">${ICON.tally}<span>Contador</span></button>
       <button class="pill-btn" data-action="rules" aria-label="Reglas del mus">${ICON.book}<span>Reglas</span></button>
-      <button class="icon-btn" data-action="mute" aria-label="Sonido"></button>
+      <button class="icon-btn settings-btn" data-action="settings" aria-label="Ajustes" title="Ajustes">${ICON.gear}</button>
+      <button class="icon-btn mute-btn" data-action="mute" aria-label="Sonido"></button>
     </div>
   </header>
   <main class="stage">
@@ -66,7 +72,15 @@ const LAYOUT = `
         <div class="controls" data-region="controls"></div>
         <div class="seat s0" data-region="seat0"></div>
       </div>
+      <div class="chat-layer" aria-live="polite"></div>
       <div class="overlay" data-region="overlay"></div>
+    </div>
+    <div class="chat-sheet" hidden role="dialog" aria-label="Chat rápido">
+      <div class="chat-tabs" role="tablist">
+        <button role="tab" data-action="chat-tab" data-tab="frase">Frases</button>
+        <button role="tab" data-action="chat-tab" data-tab="sena">Señas a tu pareja</button>
+      </div>
+      <div class="chat-items"></div>
     </div>
   </main>
   <div class="toast" role="status" aria-live="polite" hidden></div>
@@ -110,6 +124,14 @@ export class TableUI {
   onFriends: (() => void) | null = null;
   onRules: (() => void) | null = null;
   onCounter: (() => void) | null = null;
+  onSettings: (() => void) | null = null;
+  onProfile: (() => void) | null = null;
+  onRanking: (() => void) | null = null;
+  /** Termina una mano, un juego o la partida (la mesa pide seguir): para las estadísticas. */
+  onRoundEnd: ((s: State) => void) | null = null;
+  /** Mandar una frase o una seña. */
+  onChat: ((kind: ChatKind, id: string) => void) | null = null;
+  private chatTab: ChatKind = 'frase';
   onRestart: (() => void) | null = null;
   /** Salir de la partida y volver a la portada. */
   onExit: (() => void) | null = null;
@@ -129,7 +151,19 @@ export class TableUI {
     root.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.confirmOpen) this.closeConfirm();
+      if (e.key === 'Escape' && !this.sheet.hidden) this.closeChat();
+      // Tu placa abre el chat también con el teclado
+      const t = e.target as HTMLElement;
+      if ((e.key === 'Enter' || e.key === ' ') && t.matches?.('.plate[data-action="chat"]')) {
+        e.preventDefault();
+        this.openChat();
+      }
     });
+    this.renderMute();
+  }
+
+  /** Vuelve a pintar el botón de sonido (por si se ha cambiado desde los ajustes). */
+  refreshMute() {
     this.renderMute();
   }
 
@@ -162,8 +196,72 @@ export class TableUI {
     }, ms);
   }
 
+  // ---------- Chat rápido y señas ----------
+
+  private get sheet() {
+    return this.root.querySelector<HTMLElement>('.chat-sheet')!;
+  }
+
+  /** ¿Se pueden hacer señas ahora? (durante la mano, con tus cuatro cartas) */
+  private canSign() {
+    const s = this.state;
+    return !!s && ['deal', 'mus', 'discard', 'lance'].includes(s.phase) && s.hands[HUMAN].length === 4 && !s.reveal;
+  }
+
+  private openChat() {
+    if (!this.state || this.state.phase === 'intro') return;
+    if (this.chatTab === 'sena' && !this.canSign()) this.chatTab = 'frase';
+    this.renderChat();
+    this.sheet.hidden = false;
+    requestAnimationFrame(() => this.sheet.classList.add('open'));
+  }
+
+  private closeChat() {
+    this.sheet.classList.remove('open');
+    this.sheet.hidden = true;
+  }
+
+  private renderChat() {
+    const signs = this.canSign();
+    this.sheet.querySelectorAll<HTMLElement>('[data-tab]').forEach((t) => {
+      const on = t.dataset.tab === this.chatTab;
+      t.classList.toggle('on', on);
+      t.setAttribute('aria-selected', String(on));
+      if (t.dataset.tab === 'sena') (t as HTMLButtonElement).disabled = !signs;
+    });
+    const items = this.chatTab === 'frase'
+      ? PHRASES.map((p) => `<button class="chat-item" data-action="chat-send" data-kind="frase" data-id="${p.id}">${esc(p.text)}</button>`)
+      : SENAS.map((s) => `<button class="chat-item sena" data-action="chat-send" data-kind="sena" data-id="${s.id}"><span>${s.icon}</span>${esc(s.text)}</button>`);
+    const hint = this.chatTab === 'sena'
+      ? '<p class="chat-hint">Solo la ve tu pareja… si los rivales no te pillan.</p>' : '';
+    this.sheet.querySelector('.chat-items')!.innerHTML = hint + items.join('');
+  }
+
+  /** Enseña una frase o una seña encima de la placa de un jugador (asiento visto desde aquí). */
+  showChat(seat: number, text: string, show: ChatShow) {
+    const layer = this.root.querySelector<HTMLElement>('.chat-layer')!;
+    const plate = this.root.querySelector<HTMLElement>(`.mat .seat.s${seat} .plate`);
+    const mat = this.root.querySelector<HTMLElement>('.stage > .mat')!.getBoundingClientRect();
+    if (!plate) return;
+    const r = plate.getBoundingClientRect();
+    const el = document.createElement('div');
+    el.className = `chat-bubble ${show} ${seat === HUMAN ? 'up' : 'down'}`;
+    const label = { frase: '', sena: 'Seña', enviada: 'Tu seña', pillada: '¡Seña pillada!' }[show];
+    el.innerHTML = `${label ? `<small>${label}</small>` : ''}${esc(text)}`;
+    el.style.left = `${r.left - mat.left + r.width / 2}px`;
+    el.style.top = `${seat === HUMAN ? r.top - mat.top - 8 : r.bottom - mat.top + 8}px`;
+    layer.querySelectorAll(`.chat-bubble[data-seat="${seat}"]`).forEach((b) => b.remove());
+    el.dataset.seat = String(seat);
+    layer.appendChild(el);
+    if (show === 'frase') play('call');
+    window.setTimeout(() => el.classList.add('out'), 3200);
+    window.setTimeout(() => el.remove(), 3600);
+  }
+
   private onClick(e: Event) {
     const target = e.target as HTMLElement;
+    // Tocar fuera del chat lo cierra
+    if (!this.sheet.hidden && !target.closest('.chat-sheet') && !target.closest('[data-action="chat"]')) this.closeChat();
     const cardEl = target.closest<HTMLElement>('.s0 .card');
     if (cardEl && this.pending?.req.type === 'discard') {
       const id = cardEl.dataset.id!;
@@ -205,6 +303,33 @@ export class TableUI {
     }
     if (act === 'counter') {
       this.onCounter?.();
+      return;
+    }
+    if (act === 'settings') {
+      this.onSettings?.();
+      return;
+    }
+    if (act === 'profile') {
+      this.onProfile?.();
+      return;
+    }
+    if (act === 'ranking') {
+      this.onRanking?.();
+      return;
+    }
+    if (act === 'chat') {
+      if (this.sheet.hidden) this.openChat();
+      else this.closeChat();
+      return;
+    }
+    if (act === 'chat-tab') {
+      this.chatTab = btn.dataset.tab as ChatKind;
+      this.renderChat();
+      return;
+    }
+    if (act === 'chat-send') {
+      this.onChat?.(btn.dataset.kind as ChatKind, btn.dataset.id!);
+      this.closeChat();
       return;
     }
     if (act === 'start') {
@@ -295,6 +420,7 @@ export class TableUI {
   }
 
   ask(req: Request, state: State): Promise<Action> {
+    if (req.type === 'continue') this.onRoundEnd?.(state);
     return new Promise((resolve, reject) => {
       this.pending = { req, resolve, reject };
       this.amount = 2;
@@ -393,6 +519,8 @@ export class TableUI {
 
   render(state: State) {
     this.state = state;
+    // Las cartas se valoran con las reglas de esta partida (también si vienen del anfitrión)
+    setActiveRules(state.rules);
     // De vuelta en la portada: la próxima partida empieza de cero (reparto, mazo, cartas vistas)
     if (state.phase === 'intro' && this.handNo !== -1) {
       this.handNo = -1;
@@ -430,16 +558,16 @@ export class TableUI {
 
   private renderScore(s: State) {
     if (s.phase === 'intro') return '';
-    const pct = (t: 0 | 1) => Math.min(100, (s.scores[t] / WIN_POINTS) * 100);
+    const pct = (t: 0 | 1) => Math.min(100, (s.scores[t] / s.rules.points) * 100);
     const gain = (t: 0 | 1) => (s.lastGain[t] ? `<em class="sb-gain">+${s.lastGain[t]}</em>` : '');
     const games = (t: 0 | 1) =>
-      `<span class="sb-juegos" title="Juegos ganados: ${s.games[t]} de ${JUEGOS_TO_WIN}">${Array.from({ length: JUEGOS_TO_WIN }, (_, i) => `<i class="${i < s.games[t] ? 'won' : ''}"></i>`).join('')}</span>`;
+      `<span class="sb-juegos" title="Juegos ganados: ${s.games[t]} de ${s.rules.toWin}">${Array.from({ length: s.rules.toWin }, (_, i) => `<i class="${i < s.games[t] ? 'won' : ''}"></i>`).join('')}</span>`;
     const juego = s.games[0] + s.games[1] + (s.phase === 'gameover' ? 0 : 1);
     return `
       <div class="sb-team t0"><span class="sb-name">${TEAM_NAMES[0]}</span>${games(0)}<span class="sb-pts">${s.scores[0]}${gain(0)}</span></div>
       <div class="sb-mid" aria-hidden="true">
         <div class="sb-track"><i class="t0" style="width:${pct(0) / 2}%"></i><i class="t1" style="width:${pct(1) / 2}%"></i></div>
-        <span class="sb-goal">Juego ${juego} · a ${WIN_POINTS}</span>
+        <span class="sb-goal">Juego ${juego} · a ${s.rules.points}</span>
       </div>
       <div class="sb-team t1"><span class="sb-pts">${s.scores[1]}${gain(1)}</span>${games(1)}<span class="sb-name">${TEAM_NAMES[1]}</span></div>`;
   }
@@ -526,9 +654,10 @@ export class TableUI {
     const mano = s.mano === seat && !deciding ? '<span class="mano" title="Es mano">mano</span>' : '';
     const info = (seat === HUMAN || s.reveal) && s.hands[seat].length === 4
       ? `<div class="handinfo">${describePares(s.hands[seat])} · ${describeJuego(s.hands[seat])}</div>` : '';
+    const chat = seat === HUMAN ? ` data-action="chat" role="button" tabindex="0" aria-label="Chat y señas" title="Chat y señas"` : '';
     return `
-      <div class="plate team${teamOf(seat)} ${isTurn ? 'turn' : ''}">
-        <span class="avatar">${esc(name[0]?.toUpperCase() ?? '?')}${isTurn ? '<svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16"/></svg>' : ''}</span><span class="pname">${esc(name)}</span>${role ? `<span class="role">${role}</span>` : ''}${mano}
+      <div class="plate team${teamOf(seat)} ${isTurn ? 'turn' : ''}"${chat}>
+        <span class="avatar">${esc(name[0]?.toUpperCase() ?? '?')}${isTurn ? '<svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16"/></svg>' : ''}</span><span class="pname">${esc(name)}</span>${role ? `<span class="role">${role}</span>` : ''}${mano}${seat === HUMAN ? `<span class="chat-ico">${ICON.chat}</span>` : ''}
       </div>
       <div class="hand ${seat === HUMAN ? 'mine' : 'mini'}">${hand}</div>
       ${info}
@@ -602,12 +731,14 @@ export class TableUI {
       return `<div class="intro">
         <div class="fan">${fan.map((id, i) => faceHtml(id, '', `--f:${i - 2}`)).join('')}</div>
         <img class="intro-logo" src="${BASE}logo-light.png" alt="musazo" width="1400" height="218">
-        <p class="tag">Mus a 8 reyes · al mejor de 3 juegos</p>
+        <p class="tag">${rulesLabel(s.rules)}</p>
         <div class="intro-play">
           <button class="btn primary big play" data-action="start">Jugar contra la máquina</button>
           <button class="btn big play friends" data-action="friends">${ICON.users}Jugar con amigos</button>
         </div>
         <div class="intro-links">
+          <button class="link-btn" data-action="profile">Mi perfil y estadísticas</button>
+          ${rankedEnabled() ? '<button class="link-btn" data-action="ranking">Ranking de la clasificatoria</button>' : ''}
           <button class="link-btn" data-action="rules">¿Primera vez? Lee las reglas</button>
           <button class="link-btn" data-action="counter">¿Con cartas de verdad? Cuenta los tantos aquí</button>
         </div>
@@ -617,12 +748,12 @@ export class TableUI {
       const won = s.winner === 0;
       const matchOver = s.matchWinner !== null;
       const n = s.games[0] + s.games[1];
-      const kicker = matchOver ? (s.matchWinner === 0 ? 'Partida ganada' : 'Partida perdida') : `Juego ${n} · al mejor de 3`;
+      const kicker = matchOver ? (s.matchWinner === 0 ? 'Partida ganada' : 'Partida perdida') : `Juego ${n} · ${BEST_OF[s.rules.toWin]}`;
       const title = matchOver
         ? s.matchWinner === 0 ? '¡Habéis ganado la partida!' : 'Han ganado la partida'
         : won ? 'Juego para vosotros' : 'Juego para ellos';
       const dots = (t: 0 | 1) =>
-        Array.from({ length: JUEGOS_TO_WIN }, (_, i) => `<i class="${i < s.games[t] ? 'won' : ''}"></i>`).join('');
+        Array.from({ length: s.rules.toWin }, (_, i) => `<i class="${i < s.games[t] ? 'won' : ''}"></i>`).join('');
       return `<div class="panel end ${won ? 'won' : 'lost'}">
         <span class="kicker">${kicker}</span>
         <h2>${title}</h2>

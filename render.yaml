@@ -1,0 +1,17 @@
+# Render (render.com): «New → Blueprint» con este repositorio crea el servidor de partidas.
+# Ojo: en el plan gratuito el servidor se duerme si nadie lo usa y el disco no se guarda
+# (el ranking se borraría al reiniciar). Para el ranking de verdad, añade un disco (plan de pago)
+# con DATA_DIR apuntando a él, o usa Fly.io con un volumen (ver server/README.md).
+services:
+  - type: web
+    name: musazo-servidor
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run server
+    healthCheckPath: /api/health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://danelxdev.github.io
+      - key: NODE_VERSION
+        value: "22"

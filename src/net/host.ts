@@ -1,5 +1,6 @@
 import Peer, { type DataConnection } from 'peerjs';
 import { SEAT_NAMES } from '../game/engine';
+import type { Rules } from '../game/rules';
 import {
   type GuestMsg, type HostMsg, type LobbyInfo, type Mode, type SeatInfo, LOST_MS, PING_MS, peerOptions, cleanName, newCode, peerId,
 } from './protocol';
@@ -41,14 +42,16 @@ export class Host {
   /** Llega a la partida alguien nuevo a un sitio que jugaba la máquina. */
   onJoinPlaying: ((seat: number) => void) | null = null;
   onAct: ((seat: number, id: number, a: Extract<GuestMsg, { t: 'act' }>['a']) => void) | null = null;
+  /** Un invitado manda una frase o una seña. */
+  onChat: ((seat: number, kind: string, id: string) => void) | null = null;
 
-  constructor(mode: Mode, hostName: string) {
+  constructor(mode: Mode, hostName: string, rules: Rules) {
     const seats: SeatInfo[] = [0, 1, 2, 3].map((i) => {
       if (i === 0) return { name: hostName, kind: 'host', forGuest: false };
       if (GUEST_SEATS[mode].includes(i)) return { name: '', kind: 'open', forGuest: true };
       return { name: SEAT_NAMES[i], kind: 'bot', forGuest: false };
     });
-    this.lobby = { mode, code: '', seats, playing: false };
+    this.lobby = { mode, rules: { ...rules }, code: '', seats, playing: false };
   }
 
   get localSeat() {
@@ -140,6 +143,7 @@ export class Host {
       if (msg.t === 'hello') this.hello(link, String(msg.name ?? ''), String(msg.cid ?? ''));
       else if (msg.t === 'act' && link.seat !== null) this.onAct?.(link.seat, msg.id, msg.a);
       else if (msg.t === 'bye') this.drop(link);
+      else if (msg.t === 'chat' && link.seat !== null) this.onChat?.(link.seat, String(msg.kind), String(msg.id));
     });
     conn.on('close', () => this.drop(link));
     conn.on('error', () => this.drop(link));
@@ -227,6 +231,13 @@ export class Host {
     }
   }
 
+  /** Cambia las reglas antes de empezar (las ven todos en la sala). */
+  setRules(rules: Rules) {
+    if (this.lobby.playing) return;
+    this.lobby.rules = { ...rules };
+    this.changed();
+  }
+
   /** Personalizado: cambia de sitio a dos jugadores (o a un jugador con un hueco). */
   swap(a: number, b: number) {
     if (this.lobby.playing || a === b) return;
@@ -256,6 +267,7 @@ export class Host {
     return {
       names: seats.map((s) => s.name),
       bots: seats.map((s) => s.kind === 'bot' || !!s.away),
+      rules: { ...this.lobby.rules },
     };
   }
 

@@ -1,4 +1,5 @@
 import { type Card, effRank, points } from './cards';
+import { active } from './rules';
 
 export type Lance = 'grande' | 'chica' | 'pares' | 'juego' | 'punto';
 
@@ -6,18 +7,23 @@ export const LANCE_NAMES: Record<Lance, string> = {
   grande: 'Grande', chica: 'Chica', pares: 'Pares', juego: 'Juego', punto: 'Punto',
 };
 
-// Orden de las cartas de menor a mayor (a 8 reyes): As, 4, 5, 6, 7, Sota, Caballo, Rey
-const ORDER = [1, 4, 5, 6, 7, 10, 11, 12];
-const idx = (c: Card) => ORDER.indexOf(effRank(c));
+// Orden de las cartas de menor a mayor. A 8 reyes: As, 4, 5, 6, 7, Sota, Caballo, Rey;
+// a 4 reyes también cuentan el 2 y el 3 como cartas propias.
+const ORDER_8 = [1, 4, 5, 6, 7, 10, 11, 12];
+const ORDER_4 = [1, 2, 3, 4, 5, 6, 7, 10, 11, 12];
+const order = () => (active.reyes === 4 ? ORDER_4 : ORDER_8);
+const idx = (c: Card) => order().indexOf(effRank(c));
 
 export function grandeScore(hand: Card[]): number {
+  const n = order().length;
   const d = hand.map(idx).sort((a, b) => b - a);
-  return d.reduce((acc, v) => acc * 8 + v, 0);
+  return d.reduce((acc, v) => acc * n + v, 0);
 }
 
 export function chicaScore(hand: Card[]): number {
+  const n = order().length;
   const d = hand.map(idx).sort((a, b) => a - b);
-  return d.reduce((acc, v) => acc * 8 + (7 - v), 0);
+  return d.reduce((acc, v) => acc * n + (n - 1 - v), 0);
 }
 
 export type ParesKind = 'none' | 'par' | 'medias' | 'duples';
@@ -36,7 +42,7 @@ export function paresInfo(hand: Card[]): ParesInfo {
   for (const c of hand) counts.set(effRank(c), (counts.get(effRank(c)) ?? 0) + 1);
   const groups = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0]);
   const [r1, n1] = groups[0];
-  const o = (r: number) => ORDER.indexOf(r);
+  const o = (r: number) => order().indexOf(r);
   if (n1 === 4) return { kind: 'duples', score: 3000 + o(r1) * 10 + o(r1), bonus: 3, high: r1, low: r1 };
   if (n1 === 3) return { kind: 'medias', score: 2000 + o(r1) * 10, bonus: 2, high: r1, low: r1 };
   if (n1 === 2) {
@@ -108,7 +114,7 @@ export function lanceBonus(lance: Lance, hand: Card[]): number {
 }
 
 const RANK_LABEL: Record<number, [string, string]> = {
-  1: ['ases', 'as'], 4: ['cuatros', 'cuatro'], 5: ['cincos', 'cinco'], 6: ['seises', 'seis'],
+  1: ['ases', 'as'], 2: ['doses', 'dos'], 3: ['treses', 'tres'], 4: ['cuatros', 'cuatro'], 5: ['cincos', 'cinco'], 6: ['seises', 'seis'],
   7: ['sietes', 'siete'], 10: ['sotas', 'sota'], 11: ['caballos', 'caballo'], 12: ['reyes', 'rey'],
 };
 

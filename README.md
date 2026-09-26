@@ -8,6 +8,14 @@ Juego de mus en el navegador: un tapete de fieltro, la baraja española de siemp
 - Reglas completas con ejemplos animados (botón **Reglas**, arriba a la derecha).
 - Se ve bien en cualquier pantalla: ordenador, tablet y móvil, tanto en vertical como en horizontal.
 
+### Lo que hay además
+
+- **Reglas a elegir** (engranaje, arriba): a 8 o a 4 reyes, a 30 o a 40 tantos, y a un juego, al mejor de 3 o al mejor de 5.
+- **Mesa a tu gusto**: tapete verde, azul, granate, madera o noche, y reverso de las cartas azul, rojo, verde o negro.
+- **Mi perfil**: tu nombre y tus estadísticas (partidas y juegos ganados, rachas, órdagos y cada lance), guardadas en el navegador.
+- **Chat rápido y señas**: toca tu placa («Tú») para mandar una frase a la mesa o una seña a tu pareja. Las señas solo las ve tu pareja… salvo que un rival te pille (una vez de cada cuatro). Maite también te hace señas cuando lleva algo, y a veces pillarás las de los rivales.
+- **Partidas clasificatorias con ranking ELO** (necesitan el servidor de `server/`, ver [server/README.md](server/README.md)): emparejamiento por nivel, divisiones de Bronce a Txapeldun y tabla con los mejores. Sin servidor configurado aparecen como «Próximamente».
+
 ### Modos de juego
 
 - **Contra la máquina**: tú y Maite contra Iñaki y Koldo, sin conexión.
@@ -38,9 +46,12 @@ Para cuando jugáis con cartas de verdad y no hay piedras a mano (botón **Conta
 npm install
 npm run dev      # servidor de desarrollo
 npm run build    # compilación de producción en dist/
+npm run server   # servidor de partidas clasificatorias (ws://localhost:8787)
 ```
 
-Hecho con Vite + TypeScript, sin frameworks.
+Para probar la clasificatoria en local: `VITE_GAME_SERVER=ws://localhost:8787 npm run dev` con `npm run server` en otra terminal.
+
+Hecho con Vite + TypeScript, sin frameworks. El servidor de clasificatorias es Node con WebSockets y usa el mismo motor del juego que la web.
 
 ## Créditos
 

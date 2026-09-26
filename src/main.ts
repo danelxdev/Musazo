@@ -1,22 +1,33 @@
 import './style.css';
 import { type Action, type Request, type State, Engine, Restart, SEAT_NAMES, timing } from './game/engine';
 import { Viewer } from './game/view';
+import { validAction } from './game/validate';
 import * as ai from './game/ai';
 import { TableUI, TURN_MS } from './ui/table';
 import { RulesPanel } from './ui/rules';
 import { Lobby } from './ui/lobby';
+import { Settings } from './ui/settings';
+import { Profile } from './ui/profile';
+import { StatsRecorder } from './game/stats';
+import { CATCH_CHANCE, type ChatKind, type ChatShow, chatText, senaFor } from './game/chat';
+import { type Rules, savedRules } from './game/rules';
 import { CounterView, isStandalone, lastViewWasCounter } from './counter/view';
 import { preloadCards } from './ui/cards';
 import { play, unlockAudio } from './ui/sound';
 import { Host } from './net/host';
 import { Guest } from './net/guest';
 import { type HostMsg, type LobbyInfo, type Mode, isCode, saveName } from './net/protocol';
+import { RankedClient, account, fetchRanking } from './net/ranked';
+import type { Me, ServerMsg } from './net/ranked-protocol';
 
 const app = document.getElementById('app')!;
 const ui = new TableUI(app);
 const rules = new RulesPanel(document.body);
 const lobby = new Lobby(document.body);
 const counter = new CounterView(document.body);
+const settings = new Settings(document.body);
+const profile = new Profile(document.body);
+const stats = new StatsRecorder();
 
 /**
  * Quién juega en este navegador:
@@ -69,23 +80,6 @@ function askRemote(seat: number, req: Request, state: State): Promise<Action> {
   });
 }
 
-/** Comprueba que la jugada que manda un invitado vale para lo que se le ha pedido. */
-function validAction(req: Request, a: Action, state: State, seat: number) {
-  switch (req.type) {
-    case 'mus': return a.kind === 'mus' || a.kind === 'corto';
-    case 'discard': {
-      if (a.kind !== 'discard' || !Array.isArray(a.ids) || a.ids.length === 0) return false;
-      const own = new Set(state.hands[seat].map((c) => c.id));
-      return a.ids.every((id) => own.has(id));
-    }
-    case 'open': return a.kind === 'paso' || a.kind === 'ordago' || (a.kind === 'envido' && validAmount(a.n));
-    case 'respond':
-      return a.kind === 'quiero' || a.kind === 'noquiero'
-        || (!req.bet.ordago && (a.kind === 'ordago' || (a.kind === 'envido' && validAmount(a.n))));
-    case 'continue': return a.kind === 'continue';
-  }
-}
-const validAmount = (n: unknown) => typeof n === 'number' && Number.isInteger(n) && n >= 2 && n <= 30;
 
 /** «Siguiente mano»: vale el primero que pulse (aquí o en cualquier invitado). */
 function askAnyone(req: Request, state: State): Promise<Action> {
@@ -119,6 +113,7 @@ const engine = new Engine({
       return;
     }
     ui.render(localView(s));
+    botSigns(s);
     if (role === 'host' && host) {
       for (const seat of host.remoteSeats()) {
         host.sendTo(seat, { t: 'state', s: viewerOf(seat).view(s, engine.messageFor(seat)) });
@@ -144,6 +139,77 @@ const engine = new Engine({
   },
 });
 
+// ---------- Chat rápido y señas ----------
+
+const lastChat = new Map<number, number>();
+let signedHand = -1;
+
+/** ¿Hay alguien de carne y hueso en ese asiento (aquí o conectado)? */
+const isHuman = (seat: number) =>
+  (role !== 'guest' && seat === viewer.seat) || (role === 'host' && !!host?.remoteSeats().includes(seat));
+
+/** Enseña algo del chat a un jugador, con la mesa girada a su sitio. */
+function showTo(viewerSeat: number, fromSeat: number, text: string, show: ChatShow) {
+  const seat = (fromSeat - viewerSeat + 4) % 4;
+  if (viewerSeat === viewer.seat && role !== 'guest') ui.showChat(seat, text, show);
+  else host?.sendTo(viewerSeat, { t: 'chat', seat, text, show });
+}
+
+function notifySeat(seat: number, text: string) {
+  if (seat === viewer.seat && role !== 'guest') ui.toast(text);
+  else host?.sendTo(seat, { t: 'toast', text });
+}
+
+/**
+ * Reparte una frase (a toda la mesa) o una seña (a la pareja; cada rival la pilla a veces).
+ * Lo decide quien lleva la partida: contra la máquina, este navegador; con amigos, el anfitrión.
+ */
+function deliverChat(from: number, kind: ChatKind, id: string) {
+  if (!started) return;
+  const text = chatText(kind, id);
+  if (!text) return;
+  const s = engine.state;
+  if (kind === 'sena' && (!['deal', 'mus', 'discard', 'lance'].includes(s.phase) || s.reveal)) return;
+  const now = performance.now();
+  if (now - (lastChat.get(from) ?? -Infinity) < 1200) return;
+  lastChat.set(from, now);
+  if (kind === 'frase') {
+    for (let v = 0; v < 4; v++) if (isHuman(v)) showTo(v, from, text, 'frase');
+    return;
+  }
+  const partner = (from + 2) % 4;
+  if (isHuman(from)) showTo(from, from, text, 'enviada');
+  if (isHuman(partner)) showTo(partner, from, text, 'sena');
+  for (const rival of [(from + 1) % 4, (from + 3) % 4]) {
+    if (Math.random() >= CATCH_CHANCE) continue;
+    if (isHuman(rival)) showTo(rival, from, text, 'pillada');
+    if (isHuman(from)) notifySeat(from, `¡${s.names[rival]} te ha pillado la seña!`);
+  }
+}
+
+/** Al empezar los lances, los compañeros de la máquina hacen su seña si llevan algo. */
+function botSigns(s: State) {
+  if (s.phase !== 'lance' || s.lance !== 'grande' || s.handNo === signedHand) return;
+  signedHand = s.handNo;
+  const hand = s.handNo;
+  for (let seat = 0; seat < 4; seat++) {
+    if (!engine.bots[seat]) continue;
+    // Solo tiene gracia si la puede ver alguien: su pareja o un rival que la pille
+    if (![0, 1, 2, 3].some((v) => v !== seat && isHuman(v))) continue;
+    const sena = senaFor(s.hands[seat]);
+    if (!sena || Math.random() > 0.7) continue;
+    window.setTimeout(() => {
+      if (engine.state.handNo === hand) deliverChat(seat, 'sena', sena);
+    }, 500 + Math.random() * 2500);
+  }
+}
+
+ui.onChat = (kind, id) => {
+  if (role === 'guest' && ranked) ranked.send({ t: 'chat', kind, id });
+  else if (role === 'guest') guest?.send({ t: 'chat', kind, id });
+  else deliverChat(viewer.seat, kind, id);
+};
+
 // ---------- Pausa ----------
 
 // La partida se detiene mientras se leen las reglas, se usa el contador o se confirma el reinicio
@@ -151,8 +217,9 @@ const engine = new Engine({
 let rulesOpen = false;
 let counterOpen = false;
 let confirmOpen = false;
+let settingsOpen = false;
 const syncPause = () => {
-  const p = role === 'solo' && (rulesOpen || counterOpen || confirmOpen);
+  const p = role === 'solo' && (rulesOpen || counterOpen || confirmOpen || settingsOpen);
   timing.paused = p;
   ui.setPaused(p);
 };
@@ -165,6 +232,22 @@ rules.onToggle = (open) => {
   syncPause();
 };
 ui.onCounter = () => counter.open();
+ui.onSettings = () => settings.open(started || role === 'guest');
+settings.onToggle = (open) => {
+  settingsOpen = open;
+  syncPause();
+};
+settings.onSound = () => ui.refreshMute();
+ui.onProfile = () => profile.open();
+ui.onRoundEnd = (s) => stats.record(s, role === 'solo' ? 'maquina' : 'amigos');
+settings.onRules = (r) => {
+  // En la portada se ven las reglas nuevas; en la sala, las ven todos los invitados
+  if (!started && role !== 'guest') {
+    engine.configure([...SEAT_NAMES], [false, true, true, true], r);
+    ui.render(engine.state);
+  }
+  host?.setRules(r);
+};
 // Dentro del contador, para que las reglas giren con él cuando está en horizontal
 counter.onRules = () => {
   rules.mountIn(counter.root);
@@ -193,20 +276,20 @@ function setRole(r: typeof role) {
 }
 
 /** Empieza a jugar en este navegador (contra la máquina o como anfitrión). */
-function startEngine(names: string[], bots: boolean[], seat: number) {
+function startEngine(names: string[], bots: boolean[], seat: number, rules: Rules) {
   if (started) return;
   started = true;
   unlockAudio();
   viewer = new Viewer(seat);
   remoteViewers.clear();
-  engine.configure(names, bots);
+  engine.configure(names, bots, rules);
   running = running.then(() => engine.run());
 }
 
 function startSolo() {
   if (started || role === 'guest') return;
   setRole('solo');
-  startEngine([...SEAT_NAMES], [false, true, true, true], 0);
+  startEngine([...SEAT_NAMES], [false, true, true, true], 0, savedRules());
 }
 
 ui.onStart = () => startSolo();
@@ -221,6 +304,11 @@ ui.onRestart = () => {
 };
 
 ui.onExit = () => {
+  if (ranked) {
+    ranked.send({ t: 'leave' });
+    endRanked();
+    return;
+  }
   if (role === 'guest') {
     leaveGuest();
     return;
@@ -248,7 +336,7 @@ function closeHost(reason?: string) {
 function openRoom(mode: Mode, name: string) {
   closeHost();
   saveName(name);
-  const h = new Host(mode, name);
+  const h = new Host(mode, name, savedRules());
   host = h;
   let status: 'connecting' | 'ready' | 'error' = 'connecting';
   let error = '';
@@ -261,6 +349,9 @@ function openRoom(mode: Mode, name: string) {
     show(h.lobby);
   };
   h.onLobby = show;
+  h.onChat = (seat, kind, id) => {
+    if (kind === 'frase' || kind === 'sena') deliverChat(seat, kind, id);
+  };
   h.onAct = (seat, id, a) => {
     const p = remoteAsks.get(id);
     if (!p || p.seat !== seat) return;
@@ -311,6 +402,10 @@ function resend() {
 }
 
 lobby.onPick = (choice, name) => {
+  if (choice === 'ranked') {
+    startRanked(name);
+    return;
+  }
   if (choice === 'bots') {
     if (name) saveName(name);
     lobby.close();
@@ -322,17 +417,24 @@ lobby.onPick = (choice, name) => {
 };
 
 lobby.onSwap = (a, b) => host?.swap(a, b);
+lobby.onSettings = () => settings.open(false);
 
 lobby.onStart = () => {
   const h = host;
   if (!h || started) return;
-  const { names, bots } = h.start();
+  const { names, bots, rules } = h.start();
   lobby.close();
   setRole('host');
-  startEngine(names, bots, h.localSeat);
+  startEngine(names, bots, h.localSeat, rules);
 };
 
 lobby.onCancel = () => {
+  if (ranked) {
+    ranked.send({ t: 'unqueue' });
+    endRanked();
+    lobby.close();
+    return;
+  }
   if (role === 'guest' || guest) {
     leaveGuest();
     return;
@@ -342,9 +444,40 @@ lobby.onCancel = () => {
   clearHash();
 };
 
-// ---------- Invitado ----------
+// ---------- Invitado (y mesa que llega de fuera) ----------
 
+/** La mesa que llega del anfitrión o del servidor de clasificatorias. */
 let guestState: State | null = null;
+
+/** Pinta la mesa que llega de fuera y contesta lo que se pida. */
+function applyRemote(msg: HostMsg | ServerMsg, sendAct: (id: number, a: Action) => void) {
+  switch (msg.t) {
+    case 'state':
+      if (!guestState) {
+        lobby.close();
+        setRole('guest');
+        unlockAudio();
+      }
+      guestState = msg.s;
+      ui.render(msg.s);
+      break;
+    case 'ask':
+      if (guestState) {
+        const id = msg.id;
+        ui.ask(msg.req, guestState).then((a) => sendAct(id, a), () => undefined);
+      }
+      break;
+    case 'cancel':
+      ui.cancel();
+      break;
+    case 'toast':
+      ui.toast(msg.text);
+      break;
+    case 'chat':
+      if (['frase', 'sena', 'enviada', 'pillada'].includes(msg.show)) ui.showChat(Number(msg.seat) % 4, String(msg.text), msg.show);
+      break;
+  }
+}
 
 function joinRoom(code: string, name: string) {
   leaveGuest(false);
@@ -372,29 +505,8 @@ function joinRoom(code: string, name: string) {
         me = msg.you;
         if (!msg.lobby.playing && !guestState) lobby.showWait(msg.lobby, me, '');
         break;
-      case 'state':
-        if (!guestState) {
-          lobby.close();
-          setRole('guest');
-          unlockAudio();
-        }
-        guestState = msg.s;
-        ui.render(msg.s);
-        break;
-      case 'ask':
-        if (guestState) {
-          const id = msg.id;
-          ui.ask(msg.req, guestState).then(
-            (a) => g.send({ t: 'act', id, a }),
-            () => undefined,
-          );
-        }
-        break;
-      case 'cancel':
-        ui.cancel();
-        break;
-      case 'toast':
-        ui.toast(msg.text);
+      default:
+        applyRemote(msg, (id, a) => g.send({ t: 'act', id, a }));
         break;
       case 'closed':
         endGuest();
@@ -440,14 +552,105 @@ function clearHash() {
   if (location.hash.startsWith('#sala=')) history.replaceState(null, '', location.pathname + location.search);
 }
 
+// ---------- Clasificatoria ----------
+
+let ranked: RankedClient | null = null;
+let rankedMe: Me | null = null;
+
+function startRanked(name: string) {
+  if (started) return;
+  leaveGuest(false);
+  closeHost();
+  saveName(name);
+  ranked?.close();
+  const r = new RankedClient(name);
+  ranked = r;
+  guestState = null;
+  lobby.showQueue(null, 'Conectando con el servidor…');
+  r.onStatus = (st, text) => {
+    if (ranked !== r) return;
+    if (st === 'error') {
+      endRanked();
+      lobby.showError('Partida clasificatoria', text ?? '');
+    } else if (st === 'reconnecting') {
+      if (guestState) ui.toast('Se ha cortado la conexión: reconectando…', 5000);
+      else lobby.showQueue(rankedMe, 'Reconectando…');
+    }
+  };
+  r.onMsg = (m) => {
+    if (ranked !== r) return;
+    switch (m.t) {
+      case 'welcome':
+        rankedMe = m.me;
+        // Si estaba jugando, el servidor le devuelve a su partida; si no, a la cola
+        if (!guestState) {
+          r.send({ t: 'queue' });
+          lobby.showQueue(m.me, 'Buscando jugadores…');
+        }
+        break;
+      case 'queue':
+        lobby.showQueue(rankedMe, `${m.waiting > 1 ? `${m.waiting} jugadores buscando` : 'Buscando rivales'} · ${m.seconds} s`);
+        break;
+      case 'matched':
+        guestState = null;
+        ui.toast(`¡Partida! ${m.players.map((p, i) => (i ? p.name : 'Tú')).join(' · ')}`, 3500);
+        break;
+      case 'result':
+        rankedMe = m.me;
+        // Un momento para ver cómo acaba la mesa
+        window.setTimeout(() => ranked === r && lobby.showResult(m.won, m.before, m.after, m.me), 3000);
+        break;
+      case 'error':
+        ui.toast(m.text);
+        break;
+      default:
+        applyRemote(m, (id, a) => r.send({ t: 'act', id, a }));
+    }
+  };
+  r.connect();
+}
+
+function endRanked() {
+  ranked?.close();
+  ranked = null;
+  guestState = null;
+  ui.cancel();
+  setRole('solo');
+  ui.render(engine.state);
+}
+
+lobby.onRequeue = () => {
+  if (!ranked) return;
+  guestState = null;
+  setRole('solo');
+  ui.render(engine.state);
+  ranked.send({ t: 'queue' });
+  lobby.showQueue(rankedMe, 'Buscando jugadores…');
+};
+
+async function showRanking() {
+  const uid = account().uid;
+  lobby.showRanking(null, uid);
+  try {
+    lobby.showRanking(await fetchRanking(), uid);
+  } catch {
+    lobby.showRanking([], uid, 'No se ha podido cargar el ranking. Inténtalo más tarde.');
+  }
+}
+
+lobby.onRanking = () => void showRanking();
+ui.onRanking = () => void showRanking();
+
 // Avisar al salir de la página para que la máquina ocupe el sitio al momento
 window.addEventListener('pagehide', () => {
+  ranked?.close();
   guest?.leave(true);
   host?.close('El anfitrión ha cerrado la partida.');
 });
 
 // ---------- Arranque ----------
 
+engine.configure([...SEAT_NAMES], [false, true, true, true], savedRules());
 ui.render(engine.state);
 preloadCards();
 
