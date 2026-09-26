@@ -1,5 +1,8 @@
 import { type LobbyInfo, type Mode, MODE_INFO, cleanName, inviteUrl, isCode, savedName } from '../net/protocol';
 import { esc } from './table';
+import { rulesLabel } from '../game/rules';
+import type { Me, Ranked } from '../net/ranked-protocol';
+import { rankedEnabled } from '../net/ranked';
 
 const ICON = {
   back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -7,11 +10,12 @@ const ICON = {
   solo: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="8" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17" cy="8" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 18.5c.5-2.8 2.2-4.2 4.5-4.2s4 1.4 4.5 4.2M12.5 18.5c.5-2.8 2.2-4.2 4.5-4.2s4 1.4 4.5 4.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 5v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="1.5 2.5"/></svg>',
   team: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15.5" cy="9" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19c.6-3.2 2.8-4.8 5.5-4.8s4.9 1.6 5.5 4.8M14 14.4c.5-.1 1-.2 1.5-.2 2.5 0 4.4 1.5 5 4.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   custom: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="6.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="17.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="18" cy="17.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="9.5" y="9.5" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>',
+  trophy: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H4.5v1.5A3.5 3.5 0 0 0 8 11M16 6h3.5v1.5A3.5 3.5 0 0 1 16 11M12 13v4M8.5 20h7M9.5 17h5v3h-5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   share: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3.5M7.5 8 12 3.5 16.5 8M5 12.5v6A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 5.5v-.5a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 5v8A1.5 1.5 0 0 0 6 14.5h.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
 };
 
-export type Choice = 'bots' | Mode;
+export type Choice = 'bots' | Mode | 'ranked';
 
 /**
  * Menú de partidas y sala de espera:
@@ -22,7 +26,7 @@ export type Choice = 'bots' | Mode;
 export class Lobby {
   private el: HTMLElement;
   private body: HTMLElement;
-  private screen: 'modes' | 'host' | 'join' | 'wait' | 'error' | null = null;
+  private screen: 'modes' | 'host' | 'join' | 'wait' | 'error' | 'queue' | 'result' | 'ranking' | null = null;
   private selected: number | null = null;
   private lobby: LobbyInfo | null = null;
   private me = 0;
@@ -34,6 +38,11 @@ export class Lobby {
   onSwap: ((a: number, b: number) => void) | null = null;
   /** Cerrar el menú o salir de la sala. */
   onCancel: (() => void) | null = null;
+  /** Abrir los ajustes (para cambiar las reglas de la sala). */
+  onSettings: (() => void) | null = null;
+  /** Clasificatoria: volver a buscar partida, o ver el ranking. */
+  onRequeue: (() => void) | null = null;
+  onRanking: (() => void) | null = null;
 
   constructor(parent: HTMLElement) {
     this.el = document.createElement('div');
@@ -49,6 +58,8 @@ export class Lobby {
       if (form.dataset.form === 'join') this.submitJoin(form);
     });
     document.addEventListener('keydown', (e) => {
+      // Con los ajustes abiertos encima, Escape es para ellos
+      if (document.querySelector('.settings:not([hidden])')) return;
       if (e.key === 'Escape' && this.isOpen && this.screen !== 'wait') this.onCancel?.();
     });
   }
@@ -104,6 +115,12 @@ export class Lobby {
         <h2 id="lobby-title">¿Cómo quieres jugar?</h2>
       </header>
       ${this.nameField()}
+      <div class="lb-group">
+        <h3>Online · clasificatoria</h3>
+        ${rankedEnabled()
+          ? `${opt('ranked', ICON.trophy, 'Partida clasificatoria', 'Te emparejamos con gente de tu nivel. Gana y sube en el ranking.')}<button class="link-btn lb-rank-link" data-lb="ranking">Ver el ranking</button>`
+          : `<div class="lb-option soon" aria-disabled="true"><span class="lb-ico">${ICON.trophy}</span><span><b>Partida clasificatoria <em>Próximamente</em></b><small>Emparejamiento con gente de tu nivel y ranking por temporadas.</small></span></div>`}
+      </div>
       <div class="lb-split">
       <div class="lb-group">
         <h3>Multijugador · invita a una persona</h3>
@@ -166,6 +183,7 @@ export class Lobby {
         </div>
       </header>
       <p class="lb-sub">${MODE_INFO[lobby.mode].text}.</p>
+      <div class="lb-rules"><span>${esc(rulesLabel(lobby.rules))}</span><button class="link-btn" data-lb="settings">Cambiar reglas</button></div>
       <div class="lb-split">
         ${invite}
         <div>
@@ -217,9 +235,88 @@ export class Lobby {
           <h2 id="lobby-title">${lobby ? 'Ya estás dentro' : 'Entrando…'}</h2>
         </div>
       </header>
+      ${lobby ? `<div class="lb-rules"><span>${esc(rulesLabel(lobby.rules))}</span></div>` : ''}
       ${lobby ? this.seatsHtml(lobby, me, false) : ''}
       <div class="lb-actions"><p class="lb-status"><span class="spinner"></span>${esc(status || (host ? `Esperando a que ${host.name} empiece la partida…` : 'Conectando con la sala…'))}</p></div>`;
     this.open();
+  }
+
+  /** Clasificatoria: buscando partida. */
+  showQueue(me: Me | null, text: string) {
+    this.screen = 'queue';
+    this.body.dataset.screen = 'queue';
+    this.body.innerHTML = `
+      <header class="lb-head">
+        <button class="icon-btn" data-lb="cancel" aria-label="Dejar de buscar">${ICON.back}</button>
+        <div>
+          <span class="lb-kicker">Partida clasificatoria</span>
+          <h2 id="lobby-title">Buscando partida</h2>
+        </div>
+      </header>
+      ${me ? this.meHtml(me) : ''}
+      <div class="lb-actions">
+        <p class="lb-status"><span class="spinner"></span>${esc(text)}</p>
+        <p class="lb-hint lb-center">Si tarda, completamos la mesa con la máquina (esas partidas cuentan la mitad).</p>
+        <button class="btn" data-lb="cancel">Dejar de buscar</button>
+      </div>`;
+    this.open();
+  }
+
+  /** Clasificatoria: resultado y puntos ganados o perdidos. */
+  showResult(won: boolean, before: number, after: number, me: Me) {
+    this.screen = 'result';
+    this.body.dataset.screen = 'result';
+    const d = after - before;
+    this.body.innerHTML = `
+      <header class="lb-head">
+        <button class="icon-btn" data-lb="cancel" aria-label="Volver al inicio">${ICON.back}</button>
+        <div>
+          <span class="lb-kicker">Partida clasificatoria</span>
+          <h2 id="lobby-title">${won ? '¡Partida ganada!' : 'Partida perdida'}</h2>
+        </div>
+      </header>
+      <div class="lb-result ${won ? 'won' : 'lost'}">
+        <b>${d >= 0 ? '+' : '−'}${Math.abs(d)}</b>
+        <span>${before} → ${after} puntos</span>
+      </div>
+      ${this.meHtml(me)}
+      <div class="lb-actions">
+        <button class="btn primary big" data-lb="requeue">Otra partida</button>
+        <button class="link-btn" data-lb="ranking">Ver el ranking</button>
+      </div>`;
+    this.open();
+  }
+
+  /** Ranking de los mejores (list null: cargando). */
+  showRanking(list: (Ranked & { division: string })[] | null, myUid: string, error = '') {
+    this.screen = 'ranking';
+    this.body.dataset.screen = 'ranking';
+    const rows = list?.map((p, i) => `<tr class="${p.uid === myUid ? 'me' : ''}">
+        <td class="pos">${i + 1}</td>
+        <td class="who"><b>${esc(p.name)}</b><small>${esc(p.division)}</small></td>
+        <td class="pts">${p.rating}</td>
+        <td class="wl">${p.wins}/${p.games}</td></tr>`).join('') ?? '';
+    this.body.innerHTML = `
+      <header class="lb-head">
+        <button class="icon-btn" data-lb="cancel" aria-label="Volver">${ICON.back}</button>
+        <div>
+          <span class="lb-kicker">Clasificatoria</span>
+          <h2 id="lobby-title">Ranking</h2>
+        </div>
+      </header>
+      ${error ? `<p class="lb-error">${esc(error)}</p>` : ''}
+      ${!list && !error ? '<p class="lb-status"><span class="spinner"></span>Cargando…</p>' : ''}
+      ${list && !list.length ? '<p class="lb-hint lb-center">Aún no hay nadie en el ranking: ¡juega la primera partida!</p>' : ''}
+      ${list?.length ? `<table class="lb-ranking"><thead><tr><th>#</th><th>Jugador</th><th>Puntos</th><th>G/J</th></tr></thead><tbody>${rows}</tbody></table>` : ''}`;
+    this.open();
+  }
+
+  private meHtml(me: Me) {
+    return `<div class="lb-me">
+        <span class="avatar">${esc((me.name[0] ?? '?').toUpperCase())}</span>
+        <div><b>${esc(me.name)}</b><small>${esc(me.division)}${me.rank ? ` · puesto ${me.rank}` : ''} · ${me.wins}/${me.games} ganadas</small></div>
+        <strong>${me.rating}</strong>
+      </div>`;
   }
 
   showError(title: string, text: string) {
@@ -290,6 +387,12 @@ export class Lobby {
       const name = choice === 'bots' ? cleanName(this.body.querySelector<HTMLInputElement>('input[name="name"]')?.value ?? '') : this.readName();
       if (name === null) return;
       this.onPick?.(choice, name);
+    } else if (act === 'requeue') {
+      this.onRequeue?.();
+    } else if (act === 'ranking') {
+      this.onRanking?.();
+    } else if (act === 'settings') {
+      this.onSettings?.();
     } else if (act === 'start') {
       this.onStart?.();
     } else if (act === 'retry') {

@@ -1,4 +1,6 @@
 import type { Action, Request, State } from '../game/engine';
+import type { Rules } from '../game/rules';
+import type { ChatKind, ChatShow } from '../game/chat';
 
 /** Cómo es la partida con amigos. */
 export type Mode = 'equipo' | 'solo' | 'custom';
@@ -21,6 +23,7 @@ export interface SeatInfo {
 
 export interface LobbyInfo {
   mode: Mode;
+  rules: Rules;
   code: string;
   seats: SeatInfo[];
   playing: boolean;
@@ -33,6 +36,7 @@ export type HostMsg =
   | { t: 'ask'; id: number; req: Request }
   | { t: 'cancel' }
   | { t: 'toast'; text: string }
+  | { t: 'chat'; seat: number; text: string; show: ChatShow }
   | { t: 'closed'; reason: string }
   | { t: 'ping' };
 
@@ -41,6 +45,7 @@ export type GuestMsg =
   | { t: 'hello'; name: string; cid: string }
   | { t: 'act'; id: number; a: Action }
   | { t: 'bye' }
+  | { t: 'chat'; kind: ChatKind; id: string }
   | { t: 'ping' };
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
