@@ -15,11 +15,14 @@ export const JUEGOS_TO_WIN = 2;
 
 /** Reparte el que está a la izquierda de la mano (el postre). */
 export const dealerOf = (mano: number) => (mano + 3) % 4;
-function dealMessage(mano: number) {
-  const d = dealerOf(mano);
-  if (d === HUMAN) return `Repartes tú · es mano ${SEAT_NAMES[mano]}`;
-  return `Reparte ${SEAT_NAMES[d]} · ${mano === HUMAN ? 'eres mano' : `es mano ${SEAT_NAMES[mano]}`}`;
-}
+
+/**
+ * Los mensajes de la mesa dependen de quién los lee («repartes tú» / «reparte Iñaki»,
+ * «nos llevamos» / «se llevan»): se guardan como función del asiento que mira.
+ */
+export type Text = (viewer: number) => string;
+/** Pareja vista desde un asiento: «nosotros» si es la suya. */
+export const teamLabel = (team: Team, viewer: number) => TEAM_NAMES[team === teamOf(viewer) ? 0 : 1];
 
 export type Phase = 'intro' | 'deal' | 'mus' | 'discard' | 'lance' | 'showdown' | 'gameover';
 
@@ -46,6 +49,8 @@ export interface SummaryLine {
   team: Team | null;
   points: number;
   detail: string;
+  /** Quién ganó el lance (se añade su nombre al detalle). */
+  seat?: number;
 }
 
 export interface Bubble {
@@ -73,6 +78,8 @@ export type Action =
 
 export interface State {
   phase: Phase;
+  /** Nombre de cada asiento. */
+  names: string[];
   handNo: number;
   hands: Card[][];
   deck: Card[];
@@ -118,16 +125,18 @@ async function sleep(ms: number) {
 
 export interface EngineIO {
   onChange(state: State): void;
-  ask(req: Request, state: State): Promise<Action>;
+  /** Pide una decisión a un jugador de carne y hueso (`seat` null: a cualquiera, para seguir). */
+  ask(seat: number | null, req: Request, state: State): Promise<Action>;
   sound(name: 'deal' | 'chip' | 'call' | 'win' | 'ordago'): void;
   /** Cancela la decisión pendiente del jugador (al reiniciar). */
   cancel?(): void;
 }
 
 /** Estado de la portada, antes de empezar a jugar. */
-function introState(): State {
+function introState(names: string[] = [...SEAT_NAMES]): State {
   return {
     phase: 'intro',
+    names,
     handNo: 0,
     hands: [[], [], [], []],
     deck: [],
@@ -154,6 +163,9 @@ function introState(): State {
 
 export class Engine {
   state: State = introState();
+  /** Asientos que juega la máquina (se puede cambiar en marcha: si alguien se va, sigue la máquina). */
+  bots = [false, true, true, true];
+  private text: Text = () => '';
   /** Manos jugadas en la partida actual (la primera es a mus corrido). */
   private matchHands = 0;
   /** Al cortar la partida: volver a la portada en vez de empezar otra. */
@@ -161,6 +173,27 @@ export class Engine {
   botDelay = 900;
 
   constructor(private io: EngineIO) {}
+
+  /** Nombres y quién juega cada asiento (antes de empezar). */
+  configure(names: string[], bots: boolean[]) {
+    this.bots = bots.slice();
+    this.state = introState(names.slice());
+  }
+
+  /** Vuelve a pintar la mesa (por ejemplo, porque ha entrado o salido alguien). */
+  refresh() {
+    this.emit();
+  }
+
+  /** El mensaje de la mesa tal como lo lee un asiento. */
+  messageFor(viewer: number) {
+    return this.text(viewer);
+  }
+
+  private msg(t: string | Text) {
+    this.text = typeof t === 'string' ? () => t : t;
+    this.state.message = this.text(HUMAN);
+  }
 
   private emit() {
     // Saliendo a la portada: la partida que se está cortando ya no se pinta
@@ -178,7 +211,7 @@ export class Engine {
     if (this.exiting) throw new Restart();
     this.state.turn = seat;
     this.emit();
-    if (seat === HUMAN) return this.io.ask(req, this.state);
+    if (!this.bots[seat]) return this.io.ask(seat, req, this.state);
     await sleep(this.botDelay * (0.7 + Math.random() * 0.6));
     return ai.decide(this.state, seat, req);
   }
@@ -191,7 +224,7 @@ export class Engine {
         if (!(e instanceof Restart)) throw e;
         if (this.exiting) {
           this.exiting = false;
-          this.state = introState();
+          this.state = introState(this.state.names);
           this.emit();
           return;
         }
@@ -204,7 +237,7 @@ export class Engine {
   stop() {
     this.exiting = true;
     this.restart();
-    this.io.onChange(introState());
+    this.io.onChange(introState(this.state.names));
   }
 
   /** Corta la partida en curso y empieza una nueva de cero. */
@@ -231,7 +264,7 @@ export class Engine {
     s.mano = Math.floor(Math.random() * 4);
     s.musCorrido = false;
     s.deckSeat = dealerOf(s.mano);
-    s.message = 'Nueva partida';
+    this.msg('Nueva partida');
     this.emit();
   }
 
@@ -260,7 +293,7 @@ export class Engine {
         this.state.turn = null;
         this.io.sound('win');
         this.emit();
-        await this.io.ask({ type: 'continue', label: matchOver ? 'Nueva partida' : 'Siguiente juego' }, this.state);
+        await this.io.ask(null, { type: 'continue', label: matchOver ? 'Nueva partida' : 'Siguiente juego' }, this.state);
         this.state.mano = (this.state.mano + 1) % 4;
         if (matchOver) break;
       }
@@ -310,12 +343,16 @@ export class Engine {
     this.matchHands++;
     s.musCorrido = this.matchHands === 1;
     s.deckSeat = dealerOf(s.mano);
+    const mano = s.mano;
+    const d = dealerOf(mano);
+    const deals = (v: number) => (d === v ? 'repartes tú' : `reparte ${s.names[d]}`);
     if (s.musCorrido) {
-      const d = dealerOf(s.mano);
-      const first = s.mano === HUMAN ? 'hablas tú primero' : `habla primero ${SEAT_NAMES[s.mano]}`;
-      s.message = `Mus corrido · ${d === HUMAN ? 'repartes tú' : `reparte ${SEAT_NAMES[d]}`} · ${first}`;
+      this.msg((v) => `Mus corrido · ${deals(v)} · ${mano === v ? 'hablas tú primero' : `habla primero ${s.names[mano]}`}`);
     } else {
-      s.message = dealMessage(s.mano);
+      this.msg((v) => {
+        const t = deals(v);
+        return `${t[0].toUpperCase()}${t.slice(1)} · ${mano === v ? 'eres mano' : `es mano ${s.names[mano]}`}`;
+      });
     }
     this.emit();
     // Tiempo para recoger las cartas, llevar el mazo al que reparte y barajar
@@ -343,7 +380,7 @@ export class Engine {
     const s = this.state;
     for (;;) {
       s.phase = 'mus';
-      s.message = s.musCorrido ? '¿Mus? · mus corrido' : '¿Mus?';
+      this.msg(s.musCorrido ? '¿Mus? · mus corrido' : '¿Mus?');
       s.bubbles = [null, null, null, null];
       this.emit();
       let cut = false;
@@ -361,8 +398,8 @@ export class Engine {
           s.deckSeat = seat;
           const next = (seat + 1) % 4;
           // Si es el último de la vuelta, no hay a quién pasar: toca descartar
-          if (next === s.mano) s.message = 'Todos piden mus: el mazo ha dado la vuelta';
-          else s.message = next === HUMAN ? 'Te pasan el mazo: si cortas, eres mano' : `Mazo a ${SEAT_NAMES[next]}`;
+          if (next === s.mano) this.msg('Todos piden mus: el mazo ha dado la vuelta');
+          else this.msg((v) => (next === v ? 'Te pasan el mazo: si cortas, eres mano' : `Mazo a ${s.names[next]}`));
           this.emit();
         }
       }
@@ -372,7 +409,7 @@ export class Engine {
           // Mus corrido: el que corta queda de mano y reparte el de su izquierda
           s.mano = cutter;
           s.deckSeat = dealerOf(cutter);
-          s.message = cutter === HUMAN ? 'Cortas el mus: eres mano' : `Corta ${SEAT_NAMES[cutter]}: es mano`;
+          this.msg((v) => (cutter === v ? 'Cortas el mus: eres mano' : `Corta ${s.names[cutter]}: es mano`));
           this.emit();
           await sleep(1400);
           s.musCorrido = false;
@@ -384,7 +421,7 @@ export class Engine {
       await sleep(600);
 
       s.phase = 'discard';
-      s.message = 'Descartes';
+      this.msg('Descartes');
       this.emit();
       const roundDiscards: Card[][] = [[], [], [], []];
       for (const seat of seatOrder(s.mano)) {
@@ -401,11 +438,13 @@ export class Engine {
         // Mus corrido: el mazo pasa al siguiente, que reparte los descartes, y la mano corre un puesto
         s.mano = (s.mano + 1) % 4;
         s.deckSeat = dealerOf(s.mano);
-        s.message = `Mus corrido · la mano pasa a ${s.mano === HUMAN ? 'ti' : SEAT_NAMES[s.mano]}`;
+        const m = s.mano;
+        this.msg((v) => `Mus corrido · la mano pasa a ${m === v ? 'ti' : s.names[m]}`);
         this.emit();
         await sleep(1200);
       }
-      s.message = dealerOf(s.mano) === HUMAN ? 'Das cartas tú' : `Da cartas ${SEAT_NAMES[dealerOf(s.mano)]}`;
+      const giver = dealerOf(s.mano);
+      this.msg((v) => (giver === v ? 'Das cartas tú' : `Da cartas ${s.names[giver]}`));
       this.emit();
       await sleep(350);
       const pool = roundDiscards.flat();
@@ -430,7 +469,7 @@ export class Engine {
       s.declared[kind][seat] = has;
       s.turn = seat;
       this.say(seat, has ? `${kind === 'pares' ? 'Pares' : 'Juego'} sí` : 'No', has ? 'yes' : 'no');
-      await sleep(seat === HUMAN ? 450 : 650);
+      await sleep(this.bots[seat] ? 650 : 450);
     }
     s.turn = null;
     await sleep(500);
@@ -443,7 +482,7 @@ export class Engine {
     s.lance = lance;
     s.bet = null;
     s.bubbles = [null, null, null, null];
-    s.message = LANCE_NAMES[lance];
+    this.msg(LANCE_NAMES[lance]);
     this.emit();
     await sleep(500);
 
@@ -454,7 +493,7 @@ export class Engine {
       if (lance === 'juego' && participants.length === 0) {
         lance = 'punto';
         s.lance = lance;
-        s.message = 'Nadie tiene juego · se juega al Punto';
+        this.msg('Nadie tiene juego · se juega al Punto');
         participants = [0, 1, 2, 3];
         s.bubbles = [null, null, null, null];
         this.emit();
@@ -463,9 +502,11 @@ export class Engine {
         const teams = new Set(participants.map(teamOf));
         if (teams.size < 2) {
           s.records.push({ lance, status: participants.length ? 'sinjugada' : 'nadie', amount: 0, participants });
-          s.message = participants.length
-            ? `${LANCE_NAMES[lance]}: solo ${TEAM_NAMES[teamOf(participants[0])].toLowerCase()} · no se juega`
-            : `Nadie tiene ${lance}`;
+          const only = participants.length ? teamOf(participants[0]) : null;
+          const name = LANCE_NAMES[lance];
+          this.msg((v) => (only !== null
+            ? `${name}: solo ${teamLabel(only, v).toLowerCase()} · no se juega`
+            : `Nadie tiene ${lance}`));
           this.emit();
           await sleep(1200);
           return;
@@ -497,7 +538,7 @@ export class Engine {
     if (!bet) {
       s.turn = null;
       s.records.push({ lance, status: 'paso', amount: 1, participants });
-      s.message = `${LANCE_NAMES[lance]} en paso`;
+      this.msg(`${LANCE_NAMES[lance]} en paso`);
       this.emit();
       await sleep(900);
       return;
@@ -539,14 +580,15 @@ export class Engine {
           return;
         }
         s.records.push({ lance, status: 'querido', amount: bet.amount, betTeam: bet.team, participants });
-        s.message = `${LANCE_NAMES[lance]}: ${bet.amount} queridos`;
+        this.msg(`${LANCE_NAMES[lance]}: ${bet.amount} queridos`);
         this.emit();
         await sleep(1000);
         return;
       }
 
       s.records.push({ lance, status: 'noquerido', amount: bet.prev, betTeam: bet.team, participants });
-      s.message = `${bet.team === 0 ? 'Nos llevamos' : 'Se llevan'} ${bet.prev} de deje`;
+      const b = bet;
+      this.msg((v) => `${b.team === teamOf(v) ? 'Nos llevamos' : 'Se llevan'} ${b.prev} de deje`);
       this.emit();
       await sleep(700);
       this.addPoints(bet.team, bet.prev);
@@ -565,9 +607,10 @@ export class Engine {
       label: `Órdago a ${LANCE_NAMES[lance].toLowerCase()}`,
       team: teamOf(w),
       points: WIN_POINTS,
-      detail: `Gana ${SEAT_NAMES[w]}`,
+      detail: 'Gana',
+      seat: w,
     }];
-    s.message = '¡Órdago querido! Se enseñan las cartas';
+    this.msg('¡Órdago querido! Se enseñan las cartas');
     this.emit();
     await sleep(2200);
     s.scores[teamOf(w)] = WIN_POINTS;
@@ -590,7 +633,7 @@ export class Engine {
     s.turn = null;
     s.reveal = true;
     s.bubbles = [null, null, null, null];
-    s.message = 'Se ven las cartas';
+    this.msg('Se ven las cartas');
     this.emit();
     await sleep(900);
 
@@ -639,15 +682,15 @@ export class Engine {
         const extra = this.teamBonus(r.lance, team, r.participants);
         if (extra > 0) detail += ` · +${extra} de ${r.lance === 'pares' ? 'pares' : 'juego'}`;
       }
-      if (winnerSeat >= 0 && r.status !== 'noquerido' && r.status !== 'sinjugada') detail += ` · ${SEAT_NAMES[winnerSeat]}`;
-      s.summary.push({ label: name, team, points: pts, detail });
+      const shown = winnerSeat >= 0 && r.status !== 'noquerido' && r.status !== 'sinjugada';
+      s.summary.push({ label: name, team, points: pts, detail, seat: shown ? winnerSeat : undefined });
       this.emit();
       await sleep(550);
       if (team !== null && pts > 0) this.addPoints(team, pts);
     }
 
-    s.message = '';
+    this.msg('');
     this.emit();
-    await this.io.ask({ type: 'continue', label: 'Siguiente mano' }, s);
+    await this.io.ask(null, { type: 'continue', label: 'Siguiente mano' }, s);
   }
 }

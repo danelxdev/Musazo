@@ -1,12 +1,24 @@
 # musazo
 
-Juego de mus en el navegador: un tapete de fieltro, la baraja española de siempre y partidas de 4 jugadores (tú y tu compañera contra dos rivales controlados por la máquina).
+Juego de mus en el navegador: un tapete de fieltro, la baraja española de siempre y partidas de 4 jugadores, contra la máquina o con amigos.
 
 - Mus a 8 reyes, al mejor de 3 juegos de 40 tantos: mus y descartes, Grande, Chica, Pares, Juego/Punto, envites, órdagos y deje.
 - Piedras y amarracos sobre el tapete, y el mazo delante del que reparte, como en una mesa de verdad.
 - 20 segundos por turno, resumen de cada lance en pantalla, botón para reiniciar la partida y flecha para salir a la pantalla principal.
 - Reglas completas con ejemplos animados (botón **Reglas**, arriba a la derecha).
-- Sin menús: entras, pulsas **Jugar** y a jugar.
+- Se ve bien en cualquier pantalla: ordenador, tablet y móvil, tanto en vertical como en horizontal.
+
+### Modos de juego
+
+- **Contra la máquina**: tú y Maite contra Iñaki y Koldo, sin conexión.
+- **Multijugador** (invitas a una persona con un enlace o un código de 5 letras):
+  - **Solo**: tú contra tu amigo, cada uno con un compañero de la máquina.
+  - **En equipo**: tu amigo y tú, de pareja contra la máquina.
+- **Personalizado**: hasta 4 amigos. El anfitrión coloca a cada uno en su sitio (los de enfrente son pareja) y los huecos los juega la máquina.
+
+La partida se juega en el navegador del anfitrión y los demás se conectan directamente a él (WebRTC con [PeerJS](https://peerjs.com/)), así que no hace falta servidor propio: la web sigue siendo estática. Cada uno ve la mesa desde su sitio y las cartas de los demás no llegan a su navegador hasta que se enseñan. Si alguien se desconecta, la máquina juega por él y, al volver a abrir el enlace, recupera su sitio.
+
+Por defecto se usa el servidor de enlace público y gratuito de PeerJS; se puede usar otro con `VITE_PEER_HOST`, `VITE_PEER_PORT` y `VITE_PEER_PATH` al compilar.
 
 ### Contador de tantos
 
